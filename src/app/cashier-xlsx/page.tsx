@@ -41,141 +41,39 @@ interface CartItem {
   quantity: number;
 }
 
-export default function IndependentExcelCashierPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState("");
+// 1. Extracted outside to prevent React from unmounting inputs on parent re-renders
+interface CartContentProps {
+  cart: CartItem[];
+  clearCart: () => void;
+  updateQuantity: (productId: string, delta: number) => void;
+  removeFromCart: (productId: string) => void;
+  paymentMethod: string;
+  setPaymentMethod: (m: string) => void;
+  cashTendered: string;
+  setCashTendered: (val: string) => void;
+  changeDue: number;
+  subtotal: number;
+  handleCheckout: () => void;
+  isCheckingOut: boolean;
+  onCloseMobile?: () => void;
+}
 
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [cashTendered, setCashTendered] = useState<string>("");
-
-  const [isCheckingOut, setIsCheckingOut] = useState(false);
-  const [completedOrder, setCompletedOrder] = useState<any>(null);
-
-  // Mobile drawer state for cart view on smaller screens
-  const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
-
-  // Reference for the items catalog container to reset scroll position on filter
-  const catalogScrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    loadExcelData();
-  }, []);
-
-  async function loadExcelData() {
-    const data = await getIndependentMenuData();
-    setCategories(data.categories);
-    setProducts(data.products);
-  }
-
-  // Automatically scroll catalog back to top when category or search changes
-  useEffect(() => {
-    if (catalogScrollRef.current) {
-      catalogScrollRef.current.scrollTop = 0;
-    }
-  }, [selectedCategory, searchQuery]);
-
-  const addToCart = (product: Product) => {
-    setCart((prev) => {
-      const existing = prev.find((item) => item.productId === product.id);
-      if (existing) {
-        return prev.map((item) =>
-          item.productId === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item,
-        );
-      }
-      return [
-        ...prev,
-        {
-          productId: product.id,
-          name: product.name,
-          unitPrice: product.sellingPrice,
-          quantity: 1,
-        },
-      ];
-    });
-  };
-
-  const updateQuantity = (productId: string, delta: number) => {
-    setCart(
-      (prev) =>
-        prev
-          .map((item) => {
-            if (item.productId === productId) {
-              const newQty = item.quantity + delta;
-              return newQty > 0 ? { ...item, quantity: newQty } : null;
-            }
-            return item;
-          })
-          .filter(Boolean) as CartItem[],
-    );
-  };
-
-  const removeFromCart = (productId: string) => {
-    setCart((prev) => prev.filter((item) => item.productId !== productId));
-  };
-
-  const clearCart = () => {
-    setCart([]);
-    setCashTendered("");
-  };
-
-  const subtotal = cart.reduce(
-    (sum, item) => sum + item.unitPrice * item.quantity,
-    0,
-  );
-  const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const cashNum = parseFloat(cashTendered) || 0;
-  const changeDue =
-    paymentMethod === "cash" ? Math.max(0, cashNum - subtotal) : 0;
-
-  const handleCheckout = async () => {
-    if (cart.length === 0) return;
-    if (paymentMethod === "cash" && cashNum < subtotal) {
-      alert("Cash tendered is less than the total amount due!");
-      return;
-    }
-
-    setIsCheckingOut(true);
-    const res = await saveIndependentOrder({
-      paymentMethod,
-      totalAmount: subtotal,
-      items: cart,
-    });
-
-    setIsCheckingOut(false);
-
-    if (res.success) {
-      setCompletedOrder({
-        orderId: res.orderId,
-        total: subtotal,
-        paymentMethod,
-        cashTendered: paymentMethod === "cash" ? cashNum : subtotal,
-        changeDue: paymentMethod === "cash" ? changeDue : 0,
-        date: new Date().toLocaleString(),
-        items: [...cart],
-      });
-      clearCart();
-      setIsMobileCartOpen(false);
-    } else {
-      alert("Checkout failed. Could not save order record.");
-    }
-  };
-
-  const filteredProducts = products.filter((item) => {
-    const matchesSearch = item.name
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
-    const matchesCat =
-      selectedCategory === "all" || item.categoryId === selectedCategory;
-    return matchesSearch && matchesCat;
-  });
-
-  // Reusable Cart Content Component for both sidebar and mobile drawer
-  const CartContent = () => (
+function CartContent({
+  cart,
+  clearCart,
+  updateQuantity,
+  removeFromCart,
+  paymentMethod,
+  setPaymentMethod,
+  cashTendered,
+  setCashTendered,
+  changeDue,
+  subtotal,
+  handleCheckout,
+  isCheckingOut,
+  onCloseMobile,
+}: CartContentProps) {
+  return (
     <div className="flex flex-col h-full bg-white">
       {/* Cart Header */}
       <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between shrink-0">
@@ -191,12 +89,14 @@ export default function IndependentExcelCashierPage() {
               <RotateCcw className="w-3.5 h-3.5" /> Clear
             </button>
           )}
-          <button
-            onClick={() => setIsMobileCartOpen(false)}
-            className="lg:hidden w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {onCloseMobile && (
+            <button
+              onClick={onCloseMobile}
+              className="lg:hidden w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -315,11 +215,156 @@ export default function IndependentExcelCashierPage() {
         >
           {isCheckingOut
             ? "Processing..."
-            : `Complete Order (₱${subtotal.toFixed(2)})`}
+            : `Complete Order (₱{subtotal.toFixed(2)})`}
         </button>
       </div>
     </div>
   );
+}
+
+export default function IndependentExcelCashierPage() {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [cashTendered, setCashTendered] = useState<string>("");
+
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [completedOrder, setCompletedOrder] = useState<any>(null);
+  const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
+
+  const catalogScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    loadExcelData();
+  }, []);
+
+  async function loadExcelData() {
+    const data = await getIndependentMenuData();
+    setCategories(data.categories);
+    setProducts(data.products);
+  }
+
+  useEffect(() => {
+    if (catalogScrollRef.current) {
+      catalogScrollRef.current.scrollTop = 0;
+    }
+  }, [selectedCategory, searchQuery]);
+
+  const addToCart = (product: Product) => {
+    setCart((prev) => {
+      const existing = prev.find((item) => item.productId === product.id);
+      if (existing) {
+        return prev.map((item) =>
+          item.productId === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item,
+        );
+      }
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          name: product.name,
+          unitPrice: product.sellingPrice,
+          quantity: 1,
+        },
+      ];
+    });
+  };
+
+  const updateQuantity = (productId: string, delta: number) => {
+    setCart(
+      (prev) =>
+        prev
+          .map((item) => {
+            if (item.productId === productId) {
+              const newQty = item.quantity + delta;
+              return newQty > 0 ? { ...item, quantity: newQty } : null;
+            }
+            return item;
+          })
+          .filter(Boolean) as CartItem[],
+    );
+  };
+
+  const removeFromCart = (productId: string) => {
+    setCart((prev) => prev.filter((item) => item.productId !== productId));
+  };
+
+  const clearCart = () => {
+    setCart([]);
+    setCashTendered("");
+  };
+
+  const subtotal = cart.reduce(
+    (sum, item) => sum + item.unitPrice * item.quantity,
+    0,
+  );
+  const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const cashNum = parseFloat(cashTendered) || 0;
+  const changeDue =
+    paymentMethod === "cash" ? Math.max(0, cashNum - subtotal) : 0;
+
+  const handleCheckout = async () => {
+    if (cart.length === 0) return;
+    if (paymentMethod === "cash" && cashNum < subtotal) {
+      alert("Cash tendered is less than the total amount due!");
+      return;
+    }
+
+    setIsCheckingOut(true);
+    const res = await saveIndependentOrder({
+      paymentMethod,
+      totalAmount: subtotal,
+      items: cart,
+    });
+
+    setIsCheckingOut(false);
+
+    if (res.success) {
+      setCompletedOrder({
+        orderId: res.orderId,
+        total: subtotal,
+        paymentMethod,
+        cashTendered: paymentMethod === "cash" ? cashNum : subtotal,
+        changeDue: paymentMethod === "cash" ? changeDue : 0,
+        date: new Date().toLocaleString(),
+        items: [...cart],
+      });
+      clearCart();
+      setIsMobileCartOpen(false);
+    } else {
+      alert("Checkout failed. Could not save order record.");
+    }
+  };
+
+  const filteredProducts = products.filter((item) => {
+    const matchesSearch = item.name
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
+    const matchesCat =
+      selectedCategory === "all" || item.categoryId === selectedCategory;
+    return matchesSearch && matchesCat;
+  });
+
+  const cartSharedProps = {
+    cart,
+    clearCart,
+    updateQuantity,
+    removeFromCart,
+    paymentMethod,
+    setPaymentMethod,
+    cashTendered,
+    setCashTendered,
+    changeDue,
+    subtotal,
+    handleCheckout,
+    isCheckingOut,
+  };
 
   return (
     <div className="h-screen bg-[#fdfbf7] flex flex-col font-sans overflow-hidden">
@@ -473,7 +518,7 @@ export default function IndependentExcelCashierPage() {
 
         {/* SECTION 3: CART & CHECKOUT DESKTOP SIDEBAR */}
         <div className="hidden lg:flex lg:col-span-4 xl:col-span-3 bg-white border-l border-zinc-200 flex-col h-full overflow-hidden">
-          <CartContent />
+          <CartContent {...cartSharedProps} />
         </div>
       </div>
 
@@ -508,7 +553,10 @@ export default function IndependentExcelCashierPage() {
       {isMobileCartOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/50 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-t-3xl shadow-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200">
-            <CartContent />
+            <CartContent
+              {...cartSharedProps}
+              onCloseMobile={() => setIsMobileCartOpen(false)}
+            />
           </div>
         </div>
       )}

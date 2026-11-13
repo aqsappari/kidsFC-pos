@@ -41,6 +41,187 @@ interface CartItem {
   quantity: number;
 }
 
+// 1. Extracted outside to prevent React from unmounting inputs on parent re-renders
+interface CartContentProps {
+  cart: CartItem[];
+  clearCart: () => void;
+  updateQuantity: (productId: string, delta: number) => void;
+  removeFromCart: (productId: string) => void;
+  paymentMethod: string;
+  setPaymentMethod: (m: string) => void;
+  cashTendered: string;
+  setCashTendered: (val: string) => void;
+  changeDue: number;
+  subtotal: number;
+  handleCheckout: () => void;
+  isCheckingOut: boolean;
+  onCloseMobile?: () => void;
+}
+
+function CartContent({
+  cart,
+  clearCart,
+  updateQuantity,
+  removeFromCart,
+  paymentMethod,
+  setPaymentMethod,
+  cashTendered,
+  setCashTendered,
+  changeDue,
+  subtotal,
+  handleCheckout,
+  isCheckingOut,
+  onCloseMobile,
+}: CartContentProps) {
+  return (
+    <div className="flex flex-col h-full bg-white">
+      {/* Cart Header */}
+      <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between shrink-0">
+        <h2 className="font-bold text-zinc-900 font-['Montserrat'] flex items-center gap-2 text-sm sm:text-base">
+          <ShoppingCart className="w-5 h-5 text-brand" /> Current Order
+        </h2>
+        <div className="flex items-center gap-3">
+          {cart.length > 0 && (
+            <button
+              onClick={clearCart}
+              className="text-xs font-semibold text-danger hover:underline cursor-pointer flex items-center gap-1"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Clear
+            </button>
+          )}
+          {onCloseMobile && (
+            <button
+              onClick={onCloseMobile}
+              className="lg:hidden w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Cart Items List */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {cart.length === 0 ? (
+          <div className="text-center py-16 text-zinc-400">
+            <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-zinc-300" />
+            <p className="text-sm font-medium">Cart is empty</p>
+            <span className="text-xs">
+              Click any menu item to start an order.
+            </span>
+          </div>
+        ) : (
+          cart.map((item) => (
+            <div
+              key={item.productId}
+              className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 border border-zinc-100"
+            >
+              <div className="flex-1 pr-2">
+                <h4 className="font-bold text-zinc-900 text-xs line-clamp-1">
+                  {item.name}
+                </h4>
+                <span className="text-[11px] text-zinc-500">
+                  ₱{item.unitPrice.toFixed(2)} each
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => updateQuantity(item.productId, -1)}
+                  className="w-6 h-6 rounded-lg bg-white border border-zinc-200 text-zinc-700 flex items-center justify-center hover:bg-zinc-100 cursor-pointer"
+                >
+                  <Minus className="w-3 h-3" />
+                </button>
+                <span className="font-bold text-xs w-4 text-center">
+                  {item.quantity}
+                </span>
+                <button
+                  onClick={() => updateQuantity(item.productId, 1)}
+                  className="w-6 h-6 rounded-lg bg-white border border-zinc-200 text-zinc-700 flex items-center justify-center hover:bg-zinc-100 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => removeFromCart(item.productId)}
+                  className="w-6 h-6 rounded-lg bg-danger/10 text-danger flex items-center justify-center hover:bg-danger/20 cursor-pointer ml-1"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Cart Footer / Checkout Controls */}
+      <div className="p-4 border-t border-zinc-100 bg-zinc-50 space-y-3 shrink-0">
+        <div>
+          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
+            Payment Method
+          </label>
+          <div className="grid grid-cols-4 gap-1.5">
+            {["cash", "gcash", "maya", "card"].map((m) => (
+              <button
+                key={m}
+                onClick={() => setPaymentMethod(m)}
+                className={`py-1.5 rounded-xl text-[10px] font-bold uppercase transition-all cursor-pointer ${
+                  paymentMethod === m
+                    ? "bg-brand text-white shadow-xs"
+                    : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100"
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {paymentMethod === "cash" && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
+                Cash Tendered
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                placeholder="0.00"
+                value={cashTendered}
+                onChange={(e) => setCashTendered(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-xl bg-white border border-zinc-200 text-xs focus:outline-none focus:ring-2 focus:ring-brand font-bold"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
+                Change Due
+              </label>
+              <div className="px-3 py-1.5 rounded-xl bg-zinc-200/70 border border-zinc-200 text-xs font-extrabold text-brand-dark flex items-center">
+                ₱{changeDue.toFixed(2)}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="pt-2 border-t border-zinc-200/60 flex justify-between items-center text-lg font-extrabold text-zinc-900">
+          <span className="text-sm">Total Due:</span>
+          <span className="text-brand">₱{subtotal.toFixed(2)}</span>
+        </div>
+
+        <button
+          onClick={handleCheckout}
+          disabled={cart.length === 0 || isCheckingOut}
+          className="w-full py-3 rounded-2xl bg-brand text-white font-bold text-sm hover:bg-brand-dark transition-all shadow-lg shadow-brand/20 cursor-pointer disabled:opacity-50"
+        >
+          {isCheckingOut
+            ? "Processing..."
+            : `Complete Order (₱{subtotal.toFixed(2)})`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function CashierPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -178,153 +359,20 @@ export default function CashierPage() {
     return matchesSearch && matchesCat;
   });
 
-  // Reusable Cart Content Component to avoid code duplication between sidebar & mobile drawer
-  const CartContent = () => (
-    <div className="flex flex-col h-full bg-white">
-      {/* Cart Header */}
-      <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between shrink-0">
-        <h2 className="font-bold text-zinc-900 font-['Montserrat'] flex items-center gap-2 text-sm sm:text-base">
-          <ShoppingCart className="w-5 h-5 text-brand" /> Current Order
-        </h2>
-        <div className="flex items-center gap-3">
-          {cart.length > 0 && (
-            <button
-              onClick={clearCart}
-              className="text-xs font-semibold text-danger hover:underline cursor-pointer flex items-center gap-1"
-            >
-              <RotateCcw className="w-3.5 h-3.5" /> Clear
-            </button>
-          )}
-          {/* Close button for mobile modal drawer */}
-          <button
-            onClick={() => setIsMobileCartOpen(false)}
-            className="lg:hidden w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Cart Items List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {cart.length === 0 ? (
-          <div className="text-center py-16 text-zinc-400">
-            <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-zinc-300" />
-            <p className="text-sm font-medium">Cart is empty</p>
-            <span className="text-xs">
-              Click any menu item to start an order.
-            </span>
-          </div>
-        ) : (
-          cart.map((item) => (
-            <div
-              key={item.productId}
-              className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 border border-zinc-100"
-            >
-              <div className="flex-1 pr-2">
-                <h4 className="font-bold text-zinc-900 text-xs line-clamp-1">
-                  {item.name}
-                </h4>
-                <span className="text-[11px] text-zinc-500">
-                  ₱{item.unitPrice.toFixed(2)} each
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => updateQuantity(item.productId, -1)}
-                  className="w-6 h-6 rounded-lg bg-white border border-zinc-200 text-zinc-700 flex items-center justify-center hover:bg-zinc-100 cursor-pointer"
-                >
-                  <Minus className="w-3 h-3" />
-                </button>
-                <span className="font-bold text-xs w-4 text-center">
-                  {item.quantity}
-                </span>
-                <button
-                  onClick={() => updateQuantity(item.productId, 1)}
-                  className="w-6 h-6 rounded-lg bg-white border border-zinc-200 text-zinc-700 flex items-center justify-center hover:bg-zinc-100 cursor-pointer"
-                >
-                  <Plus className="w-3 h-3" />
-                </button>
-                <button
-                  onClick={() => removeFromCart(item.productId)}
-                  className="w-6 h-6 rounded-lg bg-danger/10 text-danger flex items-center justify-center hover:bg-danger/20 cursor-pointer ml-1"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Cart Footer / Checkout Controls */}
-      <div className="p-4 border-t border-zinc-100 bg-zinc-50 space-y-3 shrink-0">
-        <div>
-          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
-            Payment Method
-          </label>
-          <div className="grid grid-cols-4 gap-1.5">
-            {["cash", "gcash", "maya", "card"].map((m) => (
-              <button
-                key={m}
-                onClick={() => setPaymentMethod(m)}
-                className={`py-1.5 rounded-xl text-[10px] font-bold uppercase transition-all cursor-pointer ${
-                  paymentMethod === m
-                    ? "bg-brand text-white shadow-xs"
-                    : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100"
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {paymentMethod === "cash" && (
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
-                Cash Tendered
-              </label>
-              <input
-                type="number"
-                step="any"
-                min="0"
-                placeholder="0.00"
-                value={cashTendered}
-                onChange={(e) => setCashTendered(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-xl bg-white border border-zinc-200 text-xs focus:outline-none focus:ring-2 focus:ring-brand font-bold"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
-                Change Due
-              </label>
-              <div className="px-3 py-1.5 rounded-xl bg-zinc-200/70 border border-zinc-200 text-xs font-extrabold text-brand-dark flex items-center">
-                ₱{changeDue.toFixed(2)}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="pt-2 border-t border-zinc-200/60 flex justify-between items-center text-lg font-extrabold text-zinc-900">
-          <span className="text-sm">Total Due:</span>
-          <span className="text-brand">₱{subtotal.toFixed(2)}</span>
-        </div>
-
-        <button
-          onClick={handleCheckout}
-          disabled={cart.length === 0 || isCheckingOut}
-          className="w-full py-3 rounded-2xl bg-brand text-white font-bold text-sm hover:bg-brand-dark transition-all shadow-lg shadow-brand/20 cursor-pointer disabled:opacity-50"
-        >
-          {isCheckingOut
-            ? "Processing..."
-            : `Complete Order (₱${subtotal.toFixed(2)})`}
-        </button>
-      </div>
-    </div>
-  );
+  const cartSharedProps = {
+    cart,
+    clearCart,
+    updateQuantity,
+    removeFromCart,
+    paymentMethod,
+    setPaymentMethod,
+    cashTendered,
+    setCashTendered,
+    changeDue,
+    subtotal,
+    handleCheckout,
+    isCheckingOut,
+  };
 
   return (
     <div className="h-screen bg-[#fdfbf7] flex flex-col font-sans overflow-hidden">
@@ -476,13 +524,13 @@ export default function CashierPage() {
           </div>
         </div>
 
-        {/* SECTION 3: CART & CHECKOUT (Hidden on mobile as sidebar, shown as desktop sidebar & mobile popup drawer) */}
+        {/* SECTION 3: CART & CHECKOUT (Desktop Sidebar) */}
         <div className="hidden lg:flex lg:col-span-4 xl:col-span-3 bg-white border-l border-zinc-200 flex-col h-full overflow-hidden">
-          <CartContent />
+          <CartContent {...cartSharedProps} />
         </div>
       </div>
 
-      {/* FLOATING MOBILE CART BAR (Visible only on mobile/tablets when items are in cart) */}
+      {/* FLOATING MOBILE CART BAR */}
       {cart.length > 0 && (
         <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 p-4 shadow-2xl z-40 flex items-center justify-between animate-in slide-in-from-bottom">
           <div className="flex items-center gap-3">
@@ -513,7 +561,10 @@ export default function CashierPage() {
       {isMobileCartOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/50 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-t-3xl shadow-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200">
-            <CartContent />
+            <CartContent
+              {...cartSharedProps}
+              onCloseMobile={() => setIsMobileCartOpen(false)}
+            />
           </div>
         </div>
       )}
