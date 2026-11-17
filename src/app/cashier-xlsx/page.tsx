@@ -950,9 +950,7 @@ export default function IndependentExcelCashierPage() {
                 <p className="text-base font-extrabold text-black mt-1">
                   QUEUE #: {completedOrder.queueNumber}
                 </p>
-                <p className="text-sm font-bold text-emerald-800">
-                  LOCATION: {completedOrder.tableNumber}
-                </p>
+
                 <p className="text-[10px] text-zinc-600 mt-1">
                   Order: #{completedOrder.orderId}
                 </p>

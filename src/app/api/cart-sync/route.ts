@@ -1,32 +1,31 @@
 import { NextResponse } from "next/server";
 
-// In-memory shared cart storage for real-time synchronization
-let sharedCart = {
+let sharedCartState = {
   cart: [] as any[],
   tableNumber: "Takeout / Walk-in",
   paymentMethod: "cash",
+  isReadyForCheckout: false,
   updatedAt: Date.now(),
 };
 
-// Store active SSE clients
 let clients: ReadableStreamDefaultController[] = [];
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const type = url.searchParams.get("type");
 
-  // If requesting SSE stream for real-time updates
   if (type === "stream") {
     const stream = new ReadableStream({
       start(controller) {
         clients.push(controller);
-        // Send initial state
         controller.enqueue(
-          new TextEncoder().encode(`data: ${JSON.stringify(sharedCart)}\n\n`),
+          new TextEncoder().encode(
+            `data: ${JSON.stringify(sharedCartState)}\n\n`,
+          ),
         );
       },
       cancel() {
-        clients = clients.filter((c) => c !== clients.find((x) => x === c));
+        clients = clients.filter((c) => c !== controller);
       },
     });
 
@@ -39,30 +38,28 @@ export async function GET(req: Request) {
     });
   }
 
-  // Standard GET for current cart
-  return NextResponse.json(sharedCart);
+  return NextResponse.json(sharedCartState);
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    sharedCart = {
-      ...sharedCart,
+    sharedCartState = {
+      ...sharedCartState,
       ...body,
       updatedAt: Date.now(),
     };
 
-    // Broadcast update to all connected SSE clients (real-time sync)
-    const dataString = `data: ${JSON.stringify(sharedCart)}\n\n`;
+    const dataString = `data: ${JSON.stringify(sharedCartState)}\n\n`;
     clients.forEach((client) => {
       try {
         client.enqueue(new TextEncoder().encode(dataString));
       } catch (e) {
-        // Client disconnected
+        // Disconnected client
       }
     });
 
-    return NextResponse.json({ success: true, sharedCart });
+    return NextResponse.json({ success: true, sharedCartState });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: "Failed to update cart" },

@@ -17,6 +17,22 @@
           "quantity": 1
         }
       ]
+    },
+    {
+      "orderId": "xlsx_ord_86bifpc",
+      "queueNumber": 2,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-17T03:47:11.530Z",
+      "paymentMethod": "cash",
+      "totalAmount": 160,
+      "items": [
+        {
+          "productId": "xlsx_item_48",
+          "name": "Chicken Steak Solo",
+          "unitPrice": 80,
+          "quantity": 2
+        }
+      ]
     }
   ]
 }
