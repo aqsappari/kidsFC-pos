@@ -215,7 +215,7 @@ function CartContent({
         >
           {isCheckingOut
             ? "Processing..."
-            : `Complete Order (₱{subtotal.toFixed(2)})`}
+            : `Complete Order (₱${subtotal.toFixed(2)})`}
         </button>
       </div>
     </div>
@@ -582,7 +582,6 @@ export default function IndependentExcelCashierPage() {
               className="bg-zinc-50 p-4 rounded-2xl border border-zinc-200 mb-5 text-left font-mono text-xs text-zinc-900"
             >
               <div className="text-center border-b border-dashed border-zinc-400 pb-2 mb-2">
-                <p className="font-bold text-sm uppercase">KIDS FOOD & CAFE</p>
                 <p className="text-[10px] text-zinc-600">Order Receipt</p>
                 <p className="text-[10px] text-zinc-600 mt-1">
                   Order: #{completedOrder.orderId}
