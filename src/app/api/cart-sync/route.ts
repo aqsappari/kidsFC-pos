@@ -1,12 +1,27 @@
 import { NextResponse } from "next/server";
 
-let sharedCartState = {
-  cart: [] as any[],
-  tableNumber: "Takeout / Walk-in",
-  paymentMethod: "cash",
-  isReadyForCheckout: false,
-  updatedAt: Date.now(),
-};
+// Store carts for terminals 1 to 10
+let terminalCarts: Record<
+  number,
+  {
+    cart: any[];
+    tableNumber: string;
+    paymentMethod: string;
+    isReadyForCheckout: boolean;
+    updatedAt: number;
+  }
+> = {};
+
+// Initialize terminals 1 to 10 by default
+for (let i = 1; i <= 10; i++) {
+  terminalCarts[i] = {
+    cart: [],
+    tableNumber: "Takeout / Walk-in",
+    paymentMethod: "cash",
+    isReadyForCheckout: false,
+    updatedAt: Date.now(),
+  };
+}
 
 let clients: ReadableStreamDefaultController[] = [];
 
@@ -20,7 +35,7 @@ export async function GET(req: Request) {
         clients.push(controller);
         controller.enqueue(
           new TextEncoder().encode(
-            `data: ${JSON.stringify(sharedCartState)}\n\n`,
+            `data: ${JSON.stringify(terminalCarts)}\n\n`,
           ),
         );
       },
@@ -38,19 +53,26 @@ export async function GET(req: Request) {
     });
   }
 
-  return NextResponse.json(sharedCartState);
+  return NextResponse.json(terminalCarts);
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    sharedCartState = {
-      ...sharedCartState,
-      ...body,
-      updatedAt: Date.now(),
-    };
+    const { terminalId, ...cartData } = body;
 
-    const dataString = `data: ${JSON.stringify(sharedCartState)}\n\n`;
+    // Ensure we map to the exact terminal ID (default to 1 if missing)
+    const targetId = parseInt(terminalId || "1", 10);
+
+    if (terminalCarts[targetId]) {
+      terminalCarts[targetId] = {
+        ...terminalCarts[targetId],
+        ...cartData,
+        updatedAt: Date.now(),
+      };
+    }
+
+    const dataString = `data: ${JSON.stringify(terminalCarts)}\n\n`;
     clients.forEach((client) => {
       try {
         client.enqueue(new TextEncoder().encode(dataString));
@@ -59,7 +81,7 @@ export async function POST(req: Request) {
       }
     });
 
-    return NextResponse.json({ success: true, sharedCartState });
+    return NextResponse.json({ success: true, terminalCarts });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: "Failed to update cart" },

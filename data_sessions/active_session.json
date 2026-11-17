@@ -33,6 +33,200 @@
           "quantity": 2
         }
       ]
+    },
+    {
+      "orderId": "xlsx_ord_8x45i2e",
+      "queueNumber": 3,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-17T04:16:04.218Z",
+      "paymentMethod": "cash",
+      "totalAmount": 420,
+      "items": [
+        {
+          "productId": "xlsx_item_14",
+          "name": "Pastil Bihon",
+          "unitPrice": 8,
+          "quantity": 10
+        },
+        {
+          "productId": "xlsx_item_46",
+          "name": "Chicken w/ Rice Chicken Steak",
+          "unitPrice": 100,
+          "quantity": 2
+        },
+        {
+          "productId": "xlsx_item_26",
+          "name": "Watermelon Fruit Soda",
+          "unitPrice": 70,
+          "quantity": 1
+        },
+        {
+          "productId": "xlsx_item_28",
+          "name": "Mango Fruit Soda",
+          "unitPrice": 70,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_wa3eahs",
+      "queueNumber": 4,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-17T04:42:45.492Z",
+      "paymentMethod": "cash",
+      "totalAmount": 150,
+      "items": [
+        {
+          "productId": "xlsx_item_36",
+          "name": "Chicken Sweet Garlic Solo",
+          "unitPrice": 70,
+          "quantity": 1
+        },
+        {
+          "productId": "xlsx_item_48",
+          "name": "Chicken Steak Solo",
+          "unitPrice": 80,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_lskbu4r",
+      "queueNumber": 5,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-17T05:21:59.656Z",
+      "paymentMethod": "cash",
+      "totalAmount": 190,
+      "items": [
+        {
+          "productId": "xlsx_item_14",
+          "name": "Pastil Bihon",
+          "unitPrice": 8,
+          "quantity": 10
+        },
+        {
+          "productId": "xlsx_item_15",
+          "name": "Pastil Vegetables",
+          "unitPrice": 8,
+          "quantity": 10
+        },
+        {
+          "productId": "xlsx_item_16",
+          "name": "Empanada",
+          "unitPrice": 15,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_eg40cjr",
+      "queueNumber": 6,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-17T05:37:45.812Z",
+      "paymentMethod": "cash",
+      "totalAmount": 60,
+      "items": [
+        {
+          "productId": "xlsx_item_16",
+          "name": "Empanada",
+          "unitPrice": 15,
+          "quantity": 4
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_r8i99mm",
+      "queueNumber": 7,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-17T06:30:11.207Z",
+      "paymentMethod": "cash",
+      "totalAmount": 75,
+      "items": [
+        {
+          "productId": "xlsx_item_16",
+          "name": "Empanada",
+          "unitPrice": 15,
+          "quantity": 5
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_lxswde1",
+      "queueNumber": 8,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-17T06:55:31.467Z",
+      "paymentMethod": "cash",
+      "totalAmount": 208,
+      "items": [
+        {
+          "productId": "xlsx_item_31",
+          "name": "Choco Crinckles",
+          "unitPrice": 40,
+          "quantity": 4
+        },
+        {
+          "productId": "xlsx_item_15",
+          "name": "Pastil Vegetables",
+          "unitPrice": 8,
+          "quantity": 3
+        },
+        {
+          "productId": "xlsx_item_14",
+          "name": "Pastil Bihon",
+          "unitPrice": 8,
+          "quantity": 3
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_rkijet3",
+      "queueNumber": 9,
+      "tableNumber": "Table 1",
+      "timestamp": "2026-11-17T07:03:04.142Z",
+      "paymentMethod": "cash",
+      "totalAmount": 240,
+      "items": [
+        {
+          "productId": "xlsx_item_2",
+          "name": "Chicken w/ Rice Sweet Garlic",
+          "unitPrice": 90,
+          "quantity": 1
+        },
+        {
+          "productId": "xlsx_item_30",
+          "name": "Red Iced Tea",
+          "unitPrice": 60,
+          "quantity": 1
+        },
+        {
+          "productId": "xlsx_item_13",
+          "name": "Nuggets w/ Fries",
+          "unitPrice": 90,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_514ftca",
+      "queueNumber": 10,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-17T07:53:34.937Z",
+      "paymentMethod": "cash",
+      "totalAmount": 160,
+      "items": [
+        {
+          "productId": "xlsx_item_14",
+          "name": "Pastil Bihon",
+          "unitPrice": 8,
+          "quantity": 7
+        },
+        {
+          "productId": "xlsx_item_15",
+          "name": "Pastil Vegetables",
+          "unitPrice": 8,
+          "quantity": 13
+        }
+      ]
     }
   ]
 }

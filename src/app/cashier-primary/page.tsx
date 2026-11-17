@@ -26,19 +26,14 @@ import {
 import { printThermalReceipt } from "@/utils/printReceipt";
 
 export default function CashierPrimaryPage() {
-  const [sharedState, setSharedState] = useState<any>({
-    cart: [],
-    tableNumber: "Takeout / Walk-in",
-    paymentMethod: "cash",
-    isReadyForCheckout: false,
-  });
+  const [terminalsState, setTerminalsState] = useState<Record<number, any>>({});
+  const [selectedTerminalId, setSelectedTerminalId] = useState<number>(1);
 
   const [activeSession, setActiveSession] = useState<any>(null);
-  const [cashTendered, setCashTendered] = useState("");
-  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [cashTendered, setCashTendered] = useState<Record<number, string>>({});
+  const [isCheckingOut, setIsCheckingOut] = useState<number | null>(null);
   const [completedOrder, setCompletedOrder] = useState<any>(null);
 
-  // Session Modal State
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [exportDate, setExportDate] = useState("");
   const [isExporting, setIsExporting] = useState(false);
@@ -51,7 +46,7 @@ export default function CashierPrimaryPage() {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        setSharedState(data);
+        setTerminalsState(data);
       } catch (err) {
         console.error("Failed to parse SSE state:", err);
       }
@@ -65,75 +60,74 @@ export default function CashierPrimaryPage() {
     setActiveSession(session);
   }
 
-  const updateServerCartState = async (newState: any) => {
-    setSharedState(newState);
+  const updateServerTerminalState = async (
+    terminalId: number,
+    newState: any,
+  ) => {
+    const updated = { ...terminalsState, [terminalId]: newState };
+    setTerminalsState(updated);
     await fetch("/api/cart-sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newState),
+      body: JSON.stringify({ terminalId, ...newState }),
     });
   };
 
-  const removeItem = async (productId: string) => {
-    const newCart = sharedState.cart.filter(
-      (i: any) => i.productId !== productId,
-    );
-    await updateServerCartState({ ...sharedState, cart: newCart });
-  };
-
-  const clearSharedCart = async () => {
-    await updateServerCartState({
+  const clearTerminalCart = async (terminalId: number) => {
+    await updateServerTerminalState(terminalId, {
       cart: [],
       tableNumber: "Takeout / Walk-in",
       paymentMethod: "cash",
       isReadyForCheckout: false,
     });
-    setCashTendered("");
   };
 
-  const subtotal = sharedState.cart.reduce(
-    (sum: number, item: any) => sum + item.unitPrice * item.quantity,
-    0,
-  );
-  const cashNum = parseFloat(cashTendered) || 0;
-  const changeDue =
-    sharedState.paymentMethod === "cash" ? Math.max(0, cashNum - subtotal) : 0;
+  const handleCheckout = async (terminalId: number) => {
+    const tData = terminalsState[terminalId];
+    if (!tData || !tData.isReadyForCheckout) {
+      alert(`Terminal #${terminalId} has not flagged ready for checkout yet!`);
+      return;
+    }
+    if (tData.cart.length === 0) return;
 
-  const handleCheckout = async () => {
-    if (!sharedState.isReadyForCheckout) {
+    const tenderedVal = parseFloat(cashTendered[terminalId] || "0") || 0;
+    const subtotal = tData.cart.reduce(
+      (sum: number, item: any) => sum + item.unitPrice * item.quantity,
+      0,
+    );
+
+    if (tData.paymentMethod === "cash" && tenderedVal < subtotal) {
       alert(
-        "Checkout is disabled! The secondary cashier has not flagged this cart as ready for checkout yet.",
+        `Cash tendered is less than total amount due for Terminal #${terminalId}!`,
       );
       return;
     }
-    if (sharedState.cart.length === 0) return;
-    if (sharedState.paymentMethod === "cash" && cashNum < subtotal) {
-      alert("Cash tendered is less than total amount due!");
-      return;
-    }
 
-    setIsCheckingOut(true);
+    setIsCheckingOut(terminalId);
     const res = await saveIndependentOrder({
-      paymentMethod: sharedState.paymentMethod,
-      tableNumber: sharedState.tableNumber,
+      paymentMethod: tData.paymentMethod,
+      tableNumber: tData.tableNumber,
       totalAmount: subtotal,
-      items: sharedState.cart,
+      items: tData.cart,
     });
-    setIsCheckingOut(false);
+    setIsCheckingOut(null);
 
     if (res.success) {
       setCompletedOrder({
         orderId: res.orderId,
         queueNumber: res.queueNumber,
-        tableNumber: sharedState.tableNumber,
+        tableNumber: tData.tableNumber,
         total: subtotal,
-        paymentMethod: sharedState.paymentMethod,
-        cashTendered: sharedState.paymentMethod === "cash" ? cashNum : subtotal,
-        changeDue: sharedState.paymentMethod === "cash" ? changeDue : 0,
+        paymentMethod: tData.paymentMethod,
+        cashTendered: tData.paymentMethod === "cash" ? tenderedVal : subtotal,
+        changeDue:
+          tData.paymentMethod === "cash"
+            ? Math.max(0, tenderedVal - subtotal)
+            : 0,
         date: new Date().toLocaleString(),
-        items: [...sharedState.cart],
+        items: [...tData.cart],
       });
-      await clearSharedCart();
+      await clearTerminalCart(terminalId);
       loadSessionInfo();
     } else {
       alert("Checkout failed.");
@@ -201,7 +195,7 @@ export default function CashierPrimaryPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-extrabold text-zinc-950 font-['Montserrat'] flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> Cashier
-            Primary (Supervisor Dashboard & Checkout)
+            Primary (Terminals 1–10 Dashboard)
           </h1>
           <span className="text-xs bg-emerald-50 text-emerald-700 font-bold px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5">
             <Radio className="w-3.5 h-3.5 animate-pulse text-emerald-600" />{" "}
@@ -209,184 +203,255 @@ export default function CashierPrimaryPage() {
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowSessionModal(true)}
-            className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <Layers className="w-4 h-4" /> Session & Export
-          </button>
-        </div>
+        <button
+          onClick={() => setShowSessionModal(true)}
+          className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+        >
+          <Layers className="w-4 h-4" /> Session & Export
+        </button>
       </header>
 
-      {/* Main Container - No Catalog, Only Cart Cards / Dashboards */}
-      <div className="flex-1 p-6 overflow-y-auto max-w-5xl mx-auto w-full">
-        <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-4">
-          Incoming Terminal Carts
-        </h2>
+      {/* Main Grid of 10 Terminals */}
+      <div className="flex-1 p-6 overflow-y-auto max-w-7xl mx-auto w-full">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-wider">
+            Select Terminal (1 to 10) to Inspect & Checkout
+          </h2>
+          <span className="text-xs font-semibold text-zinc-500">
+            Session Checkouts:{" "}
+            <strong className="text-emerald-700">
+              {activeSession?.orders?.length || 0}
+            </strong>
+          </span>
+        </div>
 
-        {sharedState.cart.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-zinc-200 p-16 text-center text-zinc-400 shadow-xs">
-            <ShoppingCart className="w-16 h-16 mx-auto mb-3 text-zinc-300" />
-            <p className="text-base font-bold text-zinc-800">
-              No active cart items from terminals
-            </p>
-            <p className="text-xs mt-1">
-              Waiting for cashier-secondary to add items and flag ready for
-              checkout.
-            </p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-3xl border border-zinc-200 shadow-md p-6 space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-100 pb-4">
-              <div>
-                <span className="text-xs font-bold uppercase text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-                  {sharedState.tableNumber}
-                </span>
-                <h3 className="text-lg font-extrabold text-zinc-950 mt-2">
-                  Active Terminal Cart
-                </h3>
-              </div>
+        {/* Terminal Tabs Selector */}
+        <div className="grid grid-cols-5 sm:grid-cols-10 gap-2 mb-6">
+          {Array.from({ length: 10 }, (_, i) => {
+            const tId = i + 1;
+            const tData = terminalsState[tId];
+            const hasItems = tData?.cart?.length > 0;
+            const isReady = tData?.isReadyForCheckout;
+            const isSelected = selectedTerminalId === tId;
 
-              <div className="flex items-center gap-3">
-                {sharedState.isReadyForCheckout ? (
-                  <span className="flex items-center gap-1.5 text-xs font-bold bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200">
-                    <Unlock className="w-4 h-4" /> Ready Flagged by Secondary
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1.5 text-xs font-bold bg-rose-50 text-rose-700 px-3 py-1.5 rounded-xl border border-rose-200">
-                    <Lock className="w-4 h-4" /> Locked (Not Ready / Unflagged)
-                  </span>
+            return (
+              <button
+                key={tId}
+                onClick={() => setSelectedTerminalId(tId)}
+                className={`py-2.5 px-2 rounded-2xl text-xs font-extrabold transition-all cursor-pointer flex flex-col items-center gap-1 relative ${
+                  isSelected
+                    ? isReady
+                      ? "bg-emerald-600 text-white shadow-lg ring-4 ring-emerald-400 animate-pulse"
+                      : "bg-emerald-600 text-white shadow-md ring-2 ring-emerald-600"
+                    : isReady
+                      ? "bg-emerald-500 text-white shadow-lg ring-4 ring-emerald-300 animate-bounce"
+                      : hasItems
+                        ? "bg-amber-50 text-amber-900 border border-amber-300"
+                        : "bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                }`}
+              >
+                <span>T-{tId}</span>
+                {hasItems && (
+                  <span
+                    className={`w-2 h-2 rounded-full ${isReady ? "bg-white animate-ping" : "bg-amber-500"}`}
+                  />
                 )}
-                <button
-                  onClick={clearSharedCart}
-                  className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-colors cursor-pointer"
-                >
-                  Clear Cart
-                </button>
-              </div>
-            </div>
+              </button>
+            );
+          })}
+        </div>
 
-            {/* Cart Items List */}
-            <div className="space-y-3">
-              {sharedState.cart.map((item: any) => (
-                <div
-                  key={item.productId}
-                  className="flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 border border-zinc-100"
-                >
-                  <div className="flex-1">
-                    <h4 className="font-bold text-zinc-900 text-sm">
-                      {item.name}
-                    </h4>
-                    <span className="text-xs text-zinc-500">
-                      ₱{item.unitPrice.toFixed(2)} each
+        {/* Selected Terminal Details Card (Read-Only Items) */}
+        {(() => {
+          const tId = selectedTerminalId;
+          const tData = terminalsState[tId] || {
+            cart: [],
+            tableNumber: "Takeout / Walk-in",
+            paymentMethod: "cash",
+            isReadyForCheckout: false,
+          };
+          const subtotal = tData.cart.reduce(
+            (sum: number, item: any) => sum + item.unitPrice * item.quantity,
+            0,
+          );
+          const tenderedVal = parseFloat(cashTendered[tId] || "0") || 0;
+          const changeDue =
+            tData.paymentMethod === "cash"
+              ? Math.max(0, tenderedVal - subtotal)
+              : 0;
+
+          return (
+            <div className="bg-white rounded-3xl border border-zinc-200 shadow-md p-6 space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-100 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                      Terminal #{tId}
+                    </span>
+                    <span className="text-xs font-bold uppercase text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                      {tData.tableNumber}
                     </span>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className="font-bold text-sm text-zinc-700">
-                      Qty: {item.quantity}
+                  <h3 className="text-lg font-extrabold text-zinc-950 mt-2">
+                    Cart Items ({tData.cart.length})
+                  </h3>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {tData.isReadyForCheckout ? (
+                    <span className="flex items-center gap-1.5 text-xs font-bold bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 animate-pulse">
+                      <Unlock className="w-4 h-4" /> Ready Flagged
                     </span>
-                    <span className="font-extrabold text-sm text-zinc-950">
-                      ₱{(item.unitPrice * item.quantity).toFixed(2)}
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-xs font-bold bg-rose-50 text-rose-700 px-3 py-1.5 rounded-xl border border-rose-200">
+                      <Lock className="w-4 h-4" /> Locked (Unflagged)
                     </span>
+                  )}
+                  {tData.cart.length > 0 && (
                     <button
-                      onClick={() => removeItem(item.productId)}
-                      className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100 cursor-pointer"
+                      onClick={() => clearTerminalCart(tId)}
+                      className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-colors cursor-pointer"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      Clear Terminal Cart
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {tData.cart.length === 0 ? (
+                <div className="py-16 text-center text-zinc-400">
+                  <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-zinc-300" />
+                  <p className="text-sm font-medium">
+                    Terminal #{tId} cart is empty
+                  </p>
+                  <span className="text-xs">
+                    Staff can add items using `/cashier-secondary?u={tId}`
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {tData.cart.map((item: any) => (
+                    <div
+                      key={item.productId}
+                      className="flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 border border-zinc-100"
+                    >
+                      <div className="flex-1">
+                        <h4 className="font-bold text-zinc-900 text-sm">
+                          {item.name}
+                        </h4>
+                        <span className="text-xs text-zinc-500">
+                          ₱{item.unitPrice.toFixed(2)} each
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <span className="font-bold text-sm text-zinc-700">
+                          Qty: {item.quantity}
+                        </span>
+                        <span className="font-extrabold text-sm text-zinc-950">
+                          ₱{(item.unitPrice * item.quantity).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {tData.cart.length > 0 && (
+                <div className="pt-4 border-t border-zinc-100 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
+                        Payment Method
+                      </label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {["cash", "gcash", "maya", "card"].map((m) => (
+                          <button
+                            key={m}
+                            onClick={() =>
+                              updateServerTerminalState(tId, {
+                                ...tData,
+                                paymentMethod: m,
+                              })
+                            }
+                            className={`py-2 rounded-xl text-xs font-bold uppercase transition-all cursor-pointer ${
+                              tData.paymentMethod === m
+                                ? "bg-emerald-600 text-white"
+                                : "bg-zinc-100 text-zinc-700"
+                            }`}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {tData.paymentMethod === "cash" && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
+                            Cash Tendered
+                          </label>
+                          <input
+                            type="number"
+                            placeholder="0.00"
+                            value={cashTendered[tId] || ""}
+                            onChange={(e) =>
+                              setCashTendered({
+                                ...cashTendered,
+                                [tId]: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold text-zinc-950 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
+                            Change Due
+                          </label>
+                          <div className="px-3 py-2 rounded-xl bg-zinc-200/70 border border-zinc-200 text-sm font-extrabold text-emerald-950 flex items-center">
+                            ₱{changeDue.toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <div>
+                      <span className="text-xs text-zinc-500 font-bold uppercase block">
+                        Total Amount Due
+                      </span>
+                      <span className="text-2xl font-extrabold text-emerald-600">
+                        ₱{subtotal.toFixed(2)}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => handleCheckout(tId)}
+                      disabled={
+                        !tData.isReadyForCheckout || isCheckingOut === tId
+                      }
+                      className={`px-8 py-3.5 rounded-2xl font-bold text-sm uppercase tracking-wider transition-all shadow-lg ${
+                        tData.isReadyForCheckout
+                          ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 cursor-pointer animate-pulse"
+                          : "bg-zinc-300 text-zinc-500 cursor-not-allowed"
+                      } disabled:opacity-60`}
+                    >
+                      {!tData.isReadyForCheckout
+                        ? "Awaiting Terminal Ready Flag..."
+                        : isCheckingOut === tId
+                          ? "Processing Checkout..."
+                          : `Complete Checkout T-${tId} (₱{subtotal.toFixed(2)})`}
                     </button>
                   </div>
                 </div>
-              ))}
+              )}
             </div>
-
-            {/* Checkout Form */}
-            <div className="pt-4 border-t border-zinc-100 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
-                    Payment Method
-                  </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {["cash", "gcash", "maya", "card"].map((m) => (
-                      <button
-                        key={m}
-                        onClick={() =>
-                          updateServerCartState({
-                            ...sharedState,
-                            paymentMethod: m,
-                          })
-                        }
-                        className={`py-2 rounded-xl text-xs font-bold uppercase transition-all cursor-pointer ${
-                          sharedState.paymentMethod === m
-                            ? "bg-emerald-600 text-white"
-                            : "bg-zinc-100 text-zinc-700"
-                        }`}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {sharedState.paymentMethod === "cash" && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
-                        Cash Tendered
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="0.00"
-                        value={cashTendered}
-                        onChange={(e) => setCashTendered(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold text-zinc-950 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
-                        Change Due
-                      </label>
-                      <div className="px-3 py-2 rounded-xl bg-zinc-200/70 border border-zinc-200 text-sm font-extrabold text-emerald-950 flex items-center">
-                        ₱{changeDue.toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between pt-2">
-                <div>
-                  <span className="text-xs text-zinc-500 font-bold uppercase block">
-                    Total Amount Due
-                  </span>
-                  <span className="text-2xl font-extrabold text-emerald-600">
-                    ₱{subtotal.toFixed(2)}
-                  </span>
-                </div>
-
-                <button
-                  onClick={handleCheckout}
-                  disabled={!sharedState.isReadyForCheckout || isCheckingOut}
-                  className={`px-8 py-3.5 rounded-2xl font-bold text-sm uppercase tracking-wider transition-all shadow-lg ${
-                    sharedState.isReadyForCheckout
-                      ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 cursor-pointer"
-                      : "bg-zinc-300 text-zinc-500 cursor-not-allowed"
-                  } disabled:opacity-60`}
-                >
-                  {!sharedState.isReadyForCheckout
-                    ? "Awaiting Cashier Ready Flag..."
-                    : isCheckingOut
-                      ? "Processing Checkout..."
-                      : `Complete Checkout (₱${subtotal.toFixed(2)})`}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
-      {/* SESSION MANAGEMENT & EXPORT MODAL */}
+      {/* SESSION MANAGEMENT & EXPORT MODAL WITH PRINT BUTTON IN HISTORY */}
       {showSessionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 w-full max-w-xl border border-zinc-100 max-h-[90vh] flex flex-col">
@@ -445,40 +510,68 @@ export default function CashierPrimaryPage() {
                   </p>
                 ) : (
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                    {activeSession.orders.map((ord: any, idx: number) => (
-                      <div
-                        key={idx}
-                        className="p-3 rounded-xl bg-white border border-zinc-200 flex items-center justify-between text-xs"
-                      >
-                        <div className="space-y-0.5 pr-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-extrabold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                              Queue #{ord.queueNumber}
-                            </span>
-                            <span className="font-bold text-zinc-900">
-                              {ord.tableNumber || "Takeout"}
+                    {activeSession.orders.map((ord: any, idx: number) => {
+                      const printHistoryReceipt = () => {
+                        setCompletedOrder({
+                          orderId: ord.orderId,
+                          queueNumber: ord.queueNumber,
+                          tableNumber: ord.tableNumber,
+                          total: ord.totalAmount,
+                          paymentMethod: ord.paymentMethod,
+                          cashTendered: ord.totalAmount,
+                          changeDue: 0,
+                          date: new Date(ord.timestamp).toLocaleString(),
+                          items: ord.items,
+                        });
+                        setShowSessionModal(false);
+                      };
+
+                      return (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-xl bg-white border border-zinc-200 flex items-center justify-between text-xs"
+                        >
+                          <div className="space-y-0.5 pr-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                                Queue #{ord.queueNumber}
+                              </span>
+                              <span className="font-bold text-zinc-900">
+                                {ord.tableNumber || "Takeout"}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-zinc-500">
+                              {ord.items
+                                ?.map((i: any) => `${i.quantity}x ${i.name}`)
+                                .join(", ")}
+                            </p>
+                            <span className="text-[10px] text-zinc-400 block">
+                              {new Date(ord.timestamp).toLocaleTimeString()} • ₱
+                              {ord.totalAmount.toFixed(2)} ({ord.paymentMethod})
                             </span>
                           </div>
-                          <p className="text-[11px] text-zinc-500">
-                            {ord.items
-                              ?.map((i: any) => `${i.quantity}x ${i.name}`)
-                              .join(", ")}
-                          </p>
-                          <span className="text-[10px] text-zinc-400 block">
-                            {new Date(ord.timestamp).toLocaleTimeString()} • ₱
-                            {ord.totalAmount.toFixed(2)} ({ord.paymentMethod})
-                          </span>
-                        </div>
 
-                        <button
-                          onClick={() => handleDeleteSessionOrder(ord.orderId)}
-                          className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100 cursor-pointer shrink-0"
-                          title="Delete Order"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={printHistoryReceipt}
+                              className="w-7 h-7 rounded-lg bg-zinc-100 text-zinc-700 flex items-center justify-center hover:bg-zinc-200 cursor-pointer"
+                              title="Print Receipt"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleDeleteSessionOrder(ord.orderId)
+                              }
+                              className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100 cursor-pointer"
+                              title="Delete Order"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -524,7 +617,7 @@ export default function CashierPrimaryPage() {
                 <CheckCircle2 className="w-7 h-7" />
               </div>
               <h3 className="text-xl font-bold text-zinc-950 font-['Montserrat']">
-                Order Successful!
+                Order Receipt
               </h3>
               <div className="flex justify-center gap-2 my-2">
                 <div className="py-2 px-3 rounded-2xl bg-amber-50 border border-amber-200">

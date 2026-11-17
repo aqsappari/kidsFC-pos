@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ShoppingCart,
   Plus,
@@ -211,7 +212,14 @@ function CartContent({
   );
 }
 
-export default function CashierSecondaryPage() {
+function CashierSecondaryContent() {
+  const searchParams = useSearchParams();
+  const uParam = searchParams.get("u");
+  const terminalId = Math.min(
+    10,
+    Math.max(1, parseInt(uParam || "1", 10) || 1),
+  );
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -234,11 +242,12 @@ export default function CashierSecondaryPage() {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.cart) setCart(data.cart);
-        if (data.tableNumber) setTableNumber(data.tableNumber);
-        if (data.paymentMethod) setPaymentMethod(data.paymentMethod);
-        if (typeof data.isReadyForCheckout === "boolean") {
-          setIsReadyForCheckout(data.isReadyForCheckout);
+        const tData = data[terminalId];
+        if (tData) {
+          setCart(tData.cart || []);
+          setTableNumber(tData.tableNumber || "Takeout / Walk-in");
+          setPaymentMethod(tData.paymentMethod || "cash");
+          setIsReadyForCheckout(!!tData.isReadyForCheckout);
         }
       } catch (err) {
         console.error("Failed to parse SSE cart update:", err);
@@ -253,7 +262,7 @@ export default function CashierSecondaryPage() {
       eventSource.close();
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
-  }, []);
+  }, [terminalId]);
 
   async function loadExcelData() {
     const data = await getIndependentMenuData();
@@ -280,6 +289,7 @@ export default function CashierSecondaryPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        terminalId,
         cart: newCart,
         tableNumber: newTable,
         paymentMethod: newPayment,
@@ -377,7 +387,7 @@ export default function CashierSecondaryPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-extrabold text-zinc-950 font-['Montserrat'] flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-amber-600" /> Cashier
-            Secondary (Input Terminal)
+            Secondary (Terminal #{terminalId})
           </h1>
           <span className="text-xs bg-amber-50 text-amber-700 font-bold px-3 py-1 rounded-full border border-amber-200 hidden sm:flex items-center gap-1.5">
             <Radio className="w-3.5 h-3.5 animate-pulse text-amber-600" /> Live
@@ -403,9 +413,9 @@ export default function CashierSecondaryPage() {
         </button>
       </header>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden relative">
-        {/* LEFT SIDEBAR: SEARCH & CATEGORY FILTERS */}
-        <div className="lg:col-span-3 bg-white border-b lg:border-b-0 lg:border-r border-zinc-200 p-4 sm:p-5 flex flex-row lg:flex-col gap-4 overflow-x-auto lg:overflow-y-auto shrink-0 shadow-xs lg:shadow-none">
+      <div className="grid grid-cols-1 lg:grid-cols-12 overflow-hidden relative">
+        {/* LEFT SIDEBAR WITH lg:items-start TO PREVENT VERTICAL STRETCHING */}
+        <div className="lg:col-span-3 bg-white border-b lg:border-b-0 lg:border-r border-zinc-200 p-4 sm:p-5 flex flex-row lg:flex-col lg:items-start gap-4 overflow-x-auto lg:overflow-y-auto shrink-0 shadow-xs lg:shadow-none">
           <div className="w-full sm:w-64 lg:w-full shrink-0">
             <label className="block text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
               Search Menu
@@ -556,5 +566,19 @@ export default function CashierSecondaryPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function CashierSecondaryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="h-screen flex items-center justify-center font-bold text-zinc-500">
+          Loading Terminal...
+        </div>
+      }
+    >
+      <CashierSecondaryContent />
+    </Suspense>
   );
 }
