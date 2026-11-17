@@ -17,22 +17,6 @@
           "quantity": 1
         }
       ]
-    },
-    {
-      "orderId": "xlsx_ord_fzhge2f",
-      "queueNumber": 2,
-      "tableNumber": "Takeout / Walk-in",
-      "timestamp": "2026-11-17T03:08:10.853Z",
-      "paymentMethod": "gcash",
-      "totalAmount": 50,
-      "items": [
-        {
-          "productId": "xlsx_item_6",
-          "name": "Chopsuey",
-          "unitPrice": 50,
-          "quantity": 1
-        }
-      ]
     }
   ]
 }

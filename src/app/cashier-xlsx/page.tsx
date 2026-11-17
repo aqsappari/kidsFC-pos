@@ -17,12 +17,11 @@ import {
   ChevronUp,
   RefreshCw,
   Download,
-  Calendar,
   Layers,
   Maximize,
   Minimize,
   History,
-  MapPin,
+  Radio,
 } from "lucide-react";
 import {
   getIndependentMenuData,
@@ -302,11 +301,27 @@ export default function IndependentExcelCashierPage() {
     loadSessionInfo();
     setExportDate(new Date().toISOString().split("T")[0]);
 
+    // Setup Real-time SSE Connection for synchronization
+    const eventSource = new EventSource("/api/cart-sync?type=stream");
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.cart) setCart(data.cart);
+        if (data.tableNumber) setTableNumber(data.tableNumber);
+        if (data.paymentMethod) setPaymentMethod(data.paymentMethod);
+      } catch (err) {
+        console.error("Failed to parse SSE cart update:", err);
+      }
+    };
+
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
+
     return () => {
+      eventSource.close();
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
   }, []);
@@ -340,52 +355,77 @@ export default function IndependentExcelCashierPage() {
     }
   };
 
-  const addToCart = (product: Product) => {
-    setCart((prev) => {
-      const existing = prev.find((item) => item.productId === product.id);
-      if (existing) {
-        return prev.map((item) =>
-          item.productId === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item,
-        );
-      }
-      return [
-        ...prev,
-        {
-          productId: product.id,
-          name: product.name,
-          unitPrice: product.sellingPrice,
-          quantity: 1,
-        },
-      ];
+  // Broadcast cart updates to the real-time API
+  const updateSharedCartOnServer = async (
+    newCart: CartItem[],
+    newTable = tableNumber,
+    newPayment = paymentMethod,
+  ) => {
+    setCart(newCart);
+    await fetch("/api/cart-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cart: newCart,
+        tableNumber: newTable,
+        paymentMethod: newPayment,
+      }),
     });
   };
 
-  const updateQuantity = (productId: string, delta: number) => {
-    setCart(
-      (prev) =>
-        prev
-          .map((item) => {
-            if (item.productId === productId) {
-              const newQty = item.quantity + delta;
-              return newQty > 0 ? { ...item, quantity: newQty } : null;
-            }
-            return item;
-          })
-          .filter(Boolean) as CartItem[],
-    );
+  const addToCart = async (product: Product) => {
+    let updatedCart = [...cart];
+    const existing = updatedCart.find((item) => item.productId === product.id);
+    if (existing) {
+      updatedCart = updatedCart.map((item) =>
+        item.productId === product.id
+          ? { ...item, quantity: item.quantity + 1 }
+          : item,
+      );
+    } else {
+      updatedCart.push({
+        productId: product.id,
+        name: product.name,
+        unitPrice: product.sellingPrice,
+        quantity: 1,
+      });
+    }
+    await updateSharedCartOnServer(updatedCart);
   };
 
-  const removeFromCart = (productId: string) => {
-    setCart((prev) => prev.filter((item) => item.productId !== productId));
+  const updateQuantity = async (productId: string, delta: number) => {
+    const updatedCart = cart
+      .map((item) => {
+        if (item.productId === productId) {
+          const newQty = item.quantity + delta;
+          return newQty > 0 ? { ...item, quantity: newQty } : null;
+        }
+        return item;
+      })
+      .filter(Boolean) as CartItem[];
+    await updateSharedCartOnServer(updatedCart);
   };
 
-  const clearCart = () => {
-    setCart([]);
+  const removeFromCart = async (productId: string) => {
+    const updatedCart = cart.filter((item) => item.productId !== productId);
+    await updateSharedCartOnServer(updatedCart);
+  };
+
+  const clearCart = async () => {
+    await updateSharedCartOnServer([]);
     setCashTendered("");
     setSelectedCategory("all");
     setSearchQuery("");
+  };
+
+  const handleTableChange = async (newTable: string) => {
+    setTableNumber(newTable);
+    await updateSharedCartOnServer(cart, newTable, paymentMethod);
+  };
+
+  const handlePaymentMethodChange = async (newPayment: string) => {
+    setPaymentMethod(newPayment);
+    await updateSharedCartOnServer(cart, tableNumber, newPayment);
   };
 
   const subtotal = cart.reduce(
@@ -426,7 +466,7 @@ export default function IndependentExcelCashierPage() {
         date: new Date().toLocaleString(),
         items: [...cart],
       });
-      clearCart();
+      await clearCart();
       setIsMobileCartOpen(false);
       loadSessionInfo();
     } else {
@@ -515,9 +555,9 @@ export default function IndependentExcelCashierPage() {
     updateQuantity,
     removeFromCart,
     paymentMethod,
-    setPaymentMethod,
+    setPaymentMethod: handlePaymentMethodChange,
     tableNumber,
-    setTableNumber,
+    setTableNumber: handleTableChange,
     cashTendered,
     setCashTendered,
     changeDue,
@@ -540,6 +580,10 @@ export default function IndependentExcelCashierPage() {
               Driven by menu.xlsx with session history & queue printing
             </p>
           </div>
+          <span className="text-xs bg-emerald-50 text-emerald-700 font-bold px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5">
+            <Radio className="w-3.5 h-3.5 animate-pulse text-emerald-600" />{" "}
+            Live Synced
+          </span>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
@@ -734,7 +778,7 @@ export default function IndependentExcelCashierPage() {
         </div>
       )}
 
-      {/* SESSION MANAGEMENT & EXPORT MODAL WITH CURRENT SESSION ORDER HISTORY */}
+      {/* SESSION MANAGEMENT & EXPORT MODAL */}
       {showSessionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 w-full max-w-xl border border-zinc-100 max-h-[90vh] flex flex-col">
@@ -752,7 +796,6 @@ export default function IndependentExcelCashierPage() {
             </div>
 
             <div className="space-y-6 overflow-y-auto pr-1 flex-1">
-              {/* Active Session Info */}
               <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200">
                 <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
                   Active Session Info
@@ -777,7 +820,6 @@ export default function IndependentExcelCashierPage() {
                 </button>
               </div>
 
-              {/* Current Session Order History List */}
               <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
@@ -833,7 +875,6 @@ export default function IndependentExcelCashierPage() {
                 )}
               </div>
 
-              {/* Export Controls */}
               <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200 space-y-3">
                 <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
                   Export Current Session to Excel
@@ -920,7 +961,6 @@ export default function IndependentExcelCashierPage() {
                 </p>
               </div>
 
-              {/* Clean 58mm compact vertical item layout */}
               <div className="space-y-2 border-b border-dashed border-zinc-400 pb-2 mb-2">
                 {completedOrder.items.map((it: any, i: number) => (
                   <div key={i} className="flex flex-col text-[11px]">
