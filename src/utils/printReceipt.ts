@@ -27,7 +27,7 @@ export function printThermalReceipt(
             font-family: 'Courier New', Courier, monospace;
             font-size: 11px;
             font-weight: bold;
-            line-height: 1.2;
+            line-height: 1.25;
             width: 48mm; /* Leaves 5mm total safety margin for 58mm paper */
             margin: 0 auto;
             padding: 2mm 0;
@@ -49,13 +49,14 @@ export function printThermalReceipt(
             align-items: flex-start;
             width: 100%;
           }
-          .item-name {
-            flex: 1;
-            padding-right: 4px;
-            word-break: break-all;
+          .flex-col {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 5px;
           }
-          .item-price {
-            white-space: nowrap;
+          .pl-2 {
+            padding-left: 8px;
+            font-size: 10px;
           }
           .py-1 { padding: 3px 0; }
           .mt-2 { margin-top: 6px; }
