@@ -212,15 +212,13 @@ export async function exportSessionByDate(dateStr: string) {
     XLSX.utils.book_append_sheet(workbook, worksheet, `Sales_${dateStr}`);
 
     const exportFileName = `Active_Session_Export_${dateStr}.xlsx`;
-    const exportPath = path.join(process.cwd(), exportFileName);
-    XLSX.writeFile(workbook, exportPath);
 
-    const fileBuffer = fs.readFileSync(exportPath);
-    const base64Data = fileBuffer.toString("base64");
-
-    if (fs.existsSync(exportPath)) {
-      fs.unlinkSync(exportPath);
-    }
+    // Write workbook directly to a Node.js Buffer instead of writing to disk
+    const excelBuffer = XLSX.write(workbook, {
+      bookType: "xlsx",
+      type: "buffer",
+    });
+    const base64Data = Buffer.from(excelBuffer).toString("base64");
 
     return {
       success: true,

@@ -678,6 +678,14 @@ export default function CashierPrimaryPage() {
                   <span>Payment ({completedOrder.paymentMethod}):</span>
                   <span>₱{completedOrder.cashTendered.toFixed(2)}</span>
                 </div>
+                <div className="flex justify-between uppercase">
+                  <span>CHANGE:</span>
+                  <span>
+                    ₱
+                    {completedOrder.cashTendered.toFixed(2) -
+                      completedOrder.total.toFixed(2)}
+                  </span>
+                </div>
               </div>
             </div>
 

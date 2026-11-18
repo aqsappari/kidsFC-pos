@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-// Store carts for terminals 1 to 10
 let terminalCarts: Record<
   number,
   {
@@ -12,7 +11,6 @@ let terminalCarts: Record<
   }
 > = {};
 
-// Initialize terminals 1 to 10 by default
 for (let i = 1; i <= 10; i++) {
   terminalCarts[i] = {
     cart: [],
@@ -30,8 +28,11 @@ export async function GET(req: Request) {
   const type = url.searchParams.get("type");
 
   if (type === "stream") {
+    let currentController: ReadableStreamDefaultController;
+
     const stream = new ReadableStream({
       start(controller) {
+        currentController = controller;
         clients.push(controller);
         controller.enqueue(
           new TextEncoder().encode(
@@ -40,7 +41,8 @@ export async function GET(req: Request) {
         );
       },
       cancel() {
-        clients = clients.filter((c) => c !== controller);
+        // Safely filter out the exact controller instance that disconnected
+        clients = clients.filter((c) => c !== currentController);
       },
     });
 
@@ -60,8 +62,6 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { terminalId, ...cartData } = body;
-
-    // Ensure we map to the exact terminal ID (default to 1 if missing)
     const targetId = parseInt(terminalId || "1", 10);
 
     if (terminalCarts[targetId]) {
