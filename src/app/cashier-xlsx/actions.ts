@@ -6,9 +6,28 @@ import fs from "fs";
 
 interface ExcelRow {
   Name?: string;
+  "Item Name"?: string;
   ProductName?: string;
   Category?: string;
+  Variant?: string;
+  "Variant / Details"?: string;
   Price?: number | string;
+  "Price (₱)"?: number | string;
+}
+
+export interface ProductVariant {
+  id: string;
+  name: string;
+  price: number;
+}
+
+export interface GroupedProduct {
+  id: string;
+  name: string;
+  sellingPrice: number;
+  categoryId: string;
+  category: { id: string; name: string };
+  variants: ProductVariant[];
 }
 
 const STORAGE_DIR = path.join(process.cwd(), "data_sessions");
@@ -34,26 +53,55 @@ export async function getIndependentMenuData() {
     );
 
     const categoriesMap = new Map<string, { id: string; name: string }>();
-    const products = sheetData.map((row, index) => {
-      const categoryName = row.Category || "General";
+    const productsMap = new Map<string, GroupedProduct>();
+
+    sheetData.forEach((row, index) => {
+      const categoryName = (row.Category || "General").trim();
       const catId = categoryName.toLowerCase().replace(/\s+/g, "_");
+      const rawName = (
+        row.Name ||
+        row["Item Name"] ||
+        row.ProductName ||
+        "Unnamed Item"
+      ).trim();
+      const rawVariant = (row.Variant || row["Variant / Details"] || "").trim();
+      const price = Number(row.Price ?? row["Price (₱)"]) || 0;
 
       if (!categoriesMap.has(catId)) {
         categoriesMap.set(catId, { id: catId, name: categoryName });
       }
 
-      return {
-        id: `xlsx_item_${index + 1}`,
-        name: row.Name || row.ProductName || "Unnamed Item",
-        sellingPrice: Number(row.Price) || 0,
-        categoryId: catId,
-        category: { id: catId, name: categoryName },
-      };
+      // Group by Category + Item Name so items with multiple variants share one catalog card
+      const groupKey = `${catId}::${rawName.toLowerCase()}`;
+      const variantId = `xlsx_item_${index + 1}`;
+
+      if (!productsMap.has(groupKey)) {
+        productsMap.set(groupKey, {
+          id: variantId,
+          name: rawName,
+          sellingPrice: price,
+          categoryId: catId,
+          category: { id: catId, name: categoryName },
+          variants: [],
+        });
+      }
+
+      const existingGroup = productsMap.get(groupKey)!;
+      // Keep the lowest price as the base display price on the card
+      if (price < existingGroup.sellingPrice) {
+        existingGroup.sellingPrice = price;
+      }
+
+      existingGroup.variants.push({
+        id: variantId,
+        name: rawVariant || "Standard",
+        price,
+      });
     });
 
     return {
       categories: Array.from(categoriesMap.values()),
-      products,
+      products: Array.from(productsMap.values()),
     };
   } catch (error) {
     console.error("Error reading menu.xlsx:", error);
