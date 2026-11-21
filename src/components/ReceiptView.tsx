@@ -33,7 +33,7 @@ export function ReceiptView({
     >
       <div className="text-center font-bold pb-2 border-b border-zinc-300 space-y-0.5">
         <div className="text-sm font-extrabold tracking-wider uppercase">
-          KIDS CAFE & RESTO
+          ORDER LIST
         </div>
         <div className="text-[10px] text-zinc-500">Official Receipt</div>
         <div className="text-xs font-bold bg-zinc-100 text-zinc-900 py-0.5 px-2 rounded-md inline-block my-1">
@@ -86,6 +86,7 @@ export function ReceiptView({
       </div>
 
       <div className="text-center text-[10px] text-zinc-500 pt-2 border-t border-dashed border-zinc-300 mt-2">
+        <p>KIDS FREE WIFI : kidsgowiser@2026_123</p>
         <p>Thank you for dining with us!</p>
         <p className="font-bold">
           Please keep this receipt for your reference.
