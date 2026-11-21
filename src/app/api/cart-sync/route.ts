@@ -37,7 +37,7 @@ let terminalCarts: Record<
 for (const [tId, config] of Object.entries(TERMINAL_CONFIGS)) {
   terminalCarts[tId] = {
     cart: [],
-    tableNumber: config.tableNumber,
+    tableNumber: "",
     paymentMethod: "cash",
     isReadyForCheckout: false,
     updatedAt: Date.now(),
@@ -84,7 +84,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { terminalId, token, ...cartData } = body;
+    const { terminalId, token, resetTerminal, ...cartData } = body;
     const targetId = String(terminalId || "table-1");
 
     // Security Check: Verify secret token if terminal exists
@@ -98,13 +98,9 @@ export async function POST(req: Request) {
     }
 
     if (!terminalCarts[targetId]) {
-      const defaultTable = targetId.startsWith("table-")
-        ? `Table ${targetId.split("-")[1]}`
-        : "Takeout / Walk-in";
-
       terminalCarts[targetId] = {
         cart: [],
-        tableNumber: defaultTable,
+        tableNumber: "",
         paymentMethod: "cash",
         isReadyForCheckout: false,
         updatedAt: Date.now(),
@@ -113,11 +109,22 @@ export async function POST(req: Request) {
       };
     }
 
-    terminalCarts[targetId] = {
-      ...terminalCarts[targetId],
-      ...cartData,
-      updatedAt: Date.now(),
-    };
+    if (resetTerminal) {
+      terminalCarts[targetId] = {
+        ...terminalCarts[targetId],
+        cart: [],
+        tableNumber: "",
+        paymentMethod: "cash",
+        isReadyForCheckout: false,
+        updatedAt: Date.now(),
+      };
+    } else {
+      terminalCarts[targetId] = {
+        ...terminalCarts[targetId],
+        ...cartData,
+        updatedAt: Date.now(),
+      };
+    }
 
     const dataString = `data: ${JSON.stringify(terminalCarts)}\n\n`;
     clients.forEach((client) => {

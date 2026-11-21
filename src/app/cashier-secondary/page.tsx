@@ -7,12 +7,9 @@ import {
   Plus,
   Minus,
   Trash2,
-  Search,
   LayoutGrid,
   FileSpreadsheet,
   Radio,
-  Maximize,
-  Minimize,
   ChevronUp,
   X,
   CheckCircle2,
@@ -20,12 +17,13 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  ShieldAlert,
 } from "lucide-react";
 import {
   getIndependentMenuData,
   type GroupedProduct,
   type ProductVariant,
-} from "../cashier-xlsx/actions";
+} from "../cashier-actions";
 
 interface Category {
   id: string;
@@ -36,6 +34,7 @@ interface CartItem {
   productId: string;
   name: string;
   unitPrice: number;
+  originalPrice: number;
   quantity: number;
 }
 
@@ -51,7 +50,6 @@ interface CartContentProps {
   subtotal: number;
   isReadyForCheckout: boolean;
   toggleReadyForCheckout: () => void;
-  isTableLocked: boolean;
   onCloseMobile?: () => void;
 }
 
@@ -67,7 +65,6 @@ function CartContent({
   subtotal,
   isReadyForCheckout,
   toggleReadyForCheckout,
-  isTableLocked,
   onCloseMobile,
 }: CartContentProps) {
   return (
@@ -113,9 +110,11 @@ function CartContent({
                 <h4 className="font-bold text-zinc-900 text-xs line-clamp-2">
                   {item.name}
                 </h4>
-                <span className="text-[11px] text-zinc-500">
-                  ₱{item.unitPrice.toFixed(2)} each
-                </span>
+                <div className="flex items-center gap-2 text-[11px] mt-0.5">
+                  <span className="font-bold text-amber-700">
+                    ₱{item.unitPrice.toFixed(2)} each
+                  </span>
+                </div>
               </div>
               <div className="flex items-center gap-1.5">
                 <button
@@ -151,21 +150,29 @@ function CartContent({
       <div className="p-4 border-t border-zinc-100 bg-zinc-50 space-y-3 shrink-0">
         <div>
           <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
-            Table / Order Type
+            Dine-in / Takeout Selection <span className="text-rose-500">*</span>
           </label>
           <select
-            disabled={isReadyForCheckout || isTableLocked}
+            disabled={isReadyForCheckout}
             value={tableNumber}
             onChange={(e) => setTableNumber(e.target.value)}
             className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-950 disabled:opacity-60"
           >
+            <option value="" disabled>
+              -- Select Dine-in or Takeout --
+            </option>
             <option value="Takeout / Walk-in">Takeout / Walk-in</option>
             {Array.from({ length: 10 }, (_, i) => (
               <option key={i + 1} value={`Table ${i + 1}`}>
-                Table {i + 1}
+                Table {i + 1} (Dine-in)
               </option>
             ))}
           </select>
+          {!tableNumber && (
+            <p className="text-[10px] text-rose-600 font-semibold mt-1">
+              Please select dine-in or takeout before flagging ready.
+            </p>
+          )}
         </div>
 
         <div>
@@ -191,23 +198,27 @@ function CartContent({
         </div>
 
         <div className="pt-2 border-t border-zinc-200 flex justify-between items-center text-lg font-extrabold">
-          <span>Total Due:</span>
+          <span className="text-sm">Total Due:</span>
           <span className="text-amber-600">₱{subtotal.toFixed(2)}</span>
         </div>
 
         <button
           onClick={toggleReadyForCheckout}
-          disabled={cart.length === 0}
+          disabled={cart.length === 0 || !tableNumber}
           className={`w-full py-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md ${
             isReadyForCheckout
               ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
-              : "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20"
-          } disabled:opacity-50`}
+              : tableNumber
+                ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/20"
+                : "bg-zinc-300 text-zinc-500 cursor-not-allowed"
+          } disabled:opacity-55`}
         >
           <CheckCircle2 className="w-4 h-4" />
           {isReadyForCheckout
             ? "Ready Flagged (Click to Unflag)"
-            : "Flag Ready for Checkout"}
+            : !tableNumber
+              ? "Select Dine-in/Takeout First"
+              : "Flag Ready for Checkout"}
         </button>
       </div>
     </div>
@@ -221,17 +232,10 @@ function CashierSecondaryContent() {
 
   const terminalId = uParam || "table-1";
   const isWaiterTerminal = terminalId.toLowerCase().startsWith("waiter");
-  const isFixedTableTerminal = terminalId.toLowerCase().startsWith("table-");
-
-  const fixedTableLabel = isFixedTableTerminal
-    ? `Table ${terminalId.split("-")[1]}`
-    : null;
 
   const displayHeaderTitle = isWaiterTerminal
     ? "Server / Waiter Terminal"
-    : fixedTableLabel
-      ? `${fixedTableLabel} Ordering`
-      : `Terminal: ${terminalId}`;
+    : `Terminal: ${terminalId}`;
 
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [authError, setAuthError] = useState("");
@@ -239,16 +243,12 @@ function CashierSecondaryContent() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<GroupedProduct[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState("");
 
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [tableNumber, setTableNumber] = useState(
-    fixedTableLabel || "Takeout / Walk-in",
-  );
+  const [tableNumber, setTableNumber] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [isReadyForCheckout, setIsReadyForCheckout] = useState(false);
 
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
   // Menu Modal State
@@ -275,6 +275,17 @@ function CashierSecondaryContent() {
   const [modalQty, setModalQty] = useState<number>(1);
 
   const catalogScrollRef = useRef<HTMLDivElement>(null);
+  const prevCartLengthRef = useRef(cart.length);
+
+  // Local transition hook to reset category, mobile cart drawer, and table when cart transitions from > 0 to 0
+  useEffect(() => {
+    if (prevCartLengthRef.current > 0 && cart.length === 0) {
+      setSelectedCategory("all");
+      setIsMobileCartOpen(false);
+      setTableNumber("");
+    }
+    prevCartLengthRef.current = cart.length;
+  }, [cart.length]);
 
   useEffect(() => {
     async function verifyAccessAndLoad() {
@@ -308,10 +319,26 @@ function CashierSecondaryContent() {
         const data = JSON.parse(event.data);
         const tData = data[terminalId];
         if (tData) {
-          setCart(tData.cart || []);
-          setTableNumber(
-            fixedTableLabel || tData.tableNumber || "Takeout / Walk-in",
-          );
+          const newCart = tData.cart || [];
+          setCart(newCart);
+
+          if (newCart.length === 0) {
+            setSelectedCategory("all");
+            setIsMobileCartOpen(false);
+            setTableNumber("");
+          } else {
+            setTableNumber((prevTable) => {
+              if (
+                !prevTable &&
+                tData.tableNumber &&
+                tData.tableNumber !== "Takeout / Walk-in"
+              ) {
+                return tData.tableNumber;
+              }
+              return prevTable || tData.tableNumber || "";
+            });
+          }
+
           setPaymentMethod(tData.paymentMethod || "cash");
           setIsReadyForCheckout(!!tData.isReadyForCheckout);
         }
@@ -320,15 +347,8 @@ function CashierSecondaryContent() {
       }
     };
 
-    const handleFullscreenChange = () =>
-      setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-
-    return () => {
-      eventSource.close();
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-    };
-  }, [terminalId, tokenParam, fixedTableLabel]);
+    return () => eventSource.close();
+  }, [terminalId, tokenParam]);
 
   async function loadExcelData() {
     const data = await getIndependentMenuData();
@@ -336,23 +356,14 @@ function CashierSecondaryContent() {
     setProducts(data.products);
   }
 
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-    } else if (document.exitFullscreen) {
-      document.exitFullscreen();
-    }
-  };
-
   const updateSharedCartOnServer = async (
     newCart: CartItem[],
     newTable = tableNumber,
     newPayment = paymentMethod,
     newReadyState = isReadyForCheckout,
   ) => {
-    const finalTable = fixedTableLabel || newTable;
     setCart(newCart);
-    setTableNumber(finalTable);
+    setTableNumber(newTable);
 
     await fetch("/api/cart-sync", {
       method: "POST",
@@ -361,7 +372,7 @@ function CashierSecondaryContent() {
         terminalId,
         token: tokenParam,
         cart: newCart,
-        tableNumber: finalTable,
+        tableNumber: newTable,
         paymentMethod: newPayment,
         isReadyForCheckout: newReadyState,
       }),
@@ -403,6 +414,8 @@ function CashierSecondaryContent() {
       ? product.name
       : `${product.name} (${variant.name})`;
 
+    const price = variant.price;
+
     let updatedCart = [...cart];
     const existing = updatedCart.find((item) => item.productId === variant.id);
 
@@ -416,7 +429,8 @@ function CashierSecondaryContent() {
       updatedCart.push({
         productId: variant.id,
         name: displayName,
-        unitPrice: variant.price,
+        unitPrice: price,
+        originalPrice: price,
         quantity: quantityToAdd,
       });
     }
@@ -451,6 +465,12 @@ function CashierSecondaryContent() {
   };
 
   const toggleReadyForCheckout = async () => {
+    if (!tableNumber) {
+      alert(
+        "Please select whether the order is Dine-in or Takeout before flagging ready.",
+      );
+      return;
+    }
     const nextState = !isReadyForCheckout;
     setIsReadyForCheckout(nextState);
     await updateSharedCartOnServer(cart, tableNumber, paymentMethod, nextState);
@@ -460,8 +480,8 @@ function CashierSecondaryContent() {
     return (
       <div className="h-screen bg-[#fdfbf7] flex items-center justify-center p-6 font-sans">
         <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm text-center border border-rose-100 space-y-4">
-          <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto text-xl font-bold">
-            🚫
+          <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
           </div>
           <h2 className="text-xl font-bold text-zinc-950 font-['Montserrat']">
             Access Denied
@@ -482,12 +502,9 @@ function CashierSecondaryContent() {
   const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const filteredProducts = products.filter((item) => {
-    const matchesSearch = item.name
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
     const matchesCat =
       selectedCategory === "all" || item.categoryId === selectedCategory;
-    return matchesSearch && matchesCat;
+    return matchesCat;
   });
 
   const cartSharedProps = {
@@ -504,7 +521,6 @@ function CashierSecondaryContent() {
     subtotal,
     isReadyForCheckout,
     toggleReadyForCheckout,
-    isTableLocked: isFixedTableTerminal,
   };
 
   return (
@@ -529,47 +545,22 @@ function CashierSecondaryContent() {
         </div>
 
         <button
-          onClick={toggleFullscreen}
-          className="px-4 py-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+          onClick={() => setIsMenuModalOpen(true)}
+          className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
         >
-          {isFullscreen ? (
-            <Minimize className="w-4 h-4" />
-          ) : (
-            <Maximize className="w-4 h-4" />
-          )}
-          <span className="hidden sm:inline">
-            {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-          </span>
+          <BookOpen className="w-4 h-4" />
+          <span>View Menu</span>
         </button>
       </header>
 
-      {/* Persistent Layout: Always visible left category sidebar (col-span-3), center catalog (col-span-6), and right cart (col-span-3) */}
       <div className="flex-1 grid grid-cols-12 overflow-hidden relative">
-        {/* LEFT SIDEBAR: CATEGORIES & SEARCH (Always Visible) */}
         <div className="col-span-3 bg-white border-r border-zinc-200 p-3 sm:p-5 flex flex-col justify-between shrink-0 shadow-xs overflow-y-auto">
           <div className="flex flex-col gap-4">
             <div>
               <label className="block text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
-                Search Menu
-              </label>
-              <div className="relative">
-                <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  disabled={isReadyForCheckout}
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[10px] sm:text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2">
                 Categories
               </label>
-              <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[calc(100vh-280px)] pr-1">
+              <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[calc(100vh-160px)] pr-1">
                 <button
                   disabled={isReadyForCheckout}
                   onClick={() => setSelectedCategory("all")}
@@ -612,23 +603,11 @@ function CashierSecondaryContent() {
               </div>
             </div>
           </div>
-
-          {/* View Menu Button at the Bottom of Category Container */}
-          <div className="pt-4 border-t border-zinc-100 shrink-0">
-            <button
-              onClick={() => setIsMenuModalOpen(true)}
-              className="w-full py-3 px-4 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-colors flex items-center justify-center gap-2 shadow-md cursor-pointer"
-            >
-              <BookOpen className="w-4 h-4" />
-              <span>View Menu</span>
-            </button>
-          </div>
         </div>
 
-        {/* CENTER: CATALOG GRID */}
         <div
           ref={catalogScrollRef}
-          className="col-span-9 px-4 sm:px-6 pt-6 flex flex-col h-full overflow-y-auto pb-24 lg:pb-6"
+          className="col-span-9 lg:col-span-6 px-4 sm:px-6 pt-6 flex flex-col h-full overflow-y-auto pb-24 lg:pb-6"
         >
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-zinc-950 text-xs sm:text-sm uppercase tracking-wider font-['Montserrat']">
@@ -643,6 +622,7 @@ function CashierSecondaryContent() {
               const maxPrice = hasVariants
                 ? Math.max(...prod.variants.map((v) => v.price))
                 : minPrice;
+
               const hasPriceRange = hasVariants && maxPrice > minPrice;
 
               return (
@@ -669,11 +649,17 @@ function CashierSecondaryContent() {
                     </h3>
                   </div>
                   <div className="mt-3 sm:mt-4 pt-2.5 sm:pt-3 border-t border-zinc-100 flex items-center justify-between">
-                    <span className="font-extrabold text-zinc-950 text-xs sm:text-base">
-                      {hasPriceRange
-                        ? `₱${minPrice.toFixed(0)}–₱${maxPrice.toFixed(0)}`
-                        : `₱${minPrice.toFixed(2)}`}
-                    </span>
+                    <div>
+                      {hasPriceRange ? (
+                        <span className="font-extrabold text-zinc-950 text-xs sm:text-sm text-amber-700">
+                          ₱{minPrice.toFixed(0)}–₱{maxPrice.toFixed(0)}
+                        </span>
+                      ) : (
+                        <span className="font-extrabold text-zinc-950 text-xs sm:text-base text-amber-700">
+                          ₱{minPrice.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
                     <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white">
                       <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </div>
@@ -684,13 +670,11 @@ function CashierSecondaryContent() {
           </div>
         </div>
 
-        {/* RIGHT SIDEBAR: DESKTOP CART */}
         <div className="hidden lg:flex col-span-3 bg-white border-l border-zinc-200 flex-col h-full overflow-hidden">
           <CartContent {...cartSharedProps} />
         </div>
       </div>
 
-      {/* MENU IMAGE POPUP MODAL */}
       {isMenuModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
@@ -700,7 +684,6 @@ function CashierSecondaryContent() {
             className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden border border-zinc-100"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between shrink-0 bg-zinc-50">
               <div className="flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-amber-600" />
@@ -716,7 +699,6 @@ function CashierSecondaryContent() {
               </button>
             </div>
 
-            {/* Modal Body / Image Viewer */}
             <div className="relative flex-1 bg-zinc-950 flex items-center justify-center overflow-auto p-4 min-h-[450px]">
               <img
                 src={menuPages[currentMenuPage].src}
@@ -724,7 +706,6 @@ function CashierSecondaryContent() {
                 className="max-h-[68vh] w-auto object-contain rounded-xl shadow-lg"
               />
 
-              {/* Prev / Next Page Buttons */}
               <button
                 onClick={() =>
                   setCurrentMenuPage((prev) =>
@@ -745,7 +726,6 @@ function CashierSecondaryContent() {
               </button>
             </div>
 
-            {/* Modal Footer / Page Switcher Tabs */}
             <div className="p-4 bg-white border-t border-zinc-100 flex items-center justify-center gap-3 shrink-0">
               {menuPages.map((page, index) => (
                 <button
@@ -770,7 +750,6 @@ function CashierSecondaryContent() {
         </div>
       )}
 
-      {/* VARIANT SELECTION MODAL */}
       {variantModalProduct && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150"
@@ -830,7 +809,8 @@ function CashierSecondaryContent() {
                 Select Variant
               </label>
               {variantModalProduct.variants.map((variant) => {
-                const lineTotal = variant.price * modalQty;
+                const price = variant.price;
+                const lineTotal = price * modalQty;
                 return (
                   <button
                     key={variant.id}
@@ -844,9 +824,11 @@ function CashierSecondaryContent() {
                       <span className="font-extrabold text-sm text-zinc-900 group-hover:text-amber-800 block">
                         {variant.name}
                       </span>
-                      <span className="text-xs text-zinc-500">
-                        ₱{variant.price.toFixed(2)} each
-                      </span>
+                      <div className="flex items-center gap-2 text-xs mt-0.5">
+                        <span className="text-amber-700 font-bold">
+                          ₱{price.toFixed(2)} each
+                        </span>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="font-extrabold text-sm text-amber-700 bg-amber-100/80 px-3 py-1.5 rounded-xl">
@@ -861,7 +843,6 @@ function CashierSecondaryContent() {
         </div>
       )}
 
-      {/* FLOATING FOOTER FOR SMALLER SCREENS */}
       {cart.length > 0 && (
         <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 p-4 shadow-2xl z-40 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -887,7 +868,6 @@ function CashierSecondaryContent() {
         </div>
       )}
 
-      {/* MOBILE CART DRAWER */}
       {isMobileCartOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end bg-black/50 backdrop-blur-xs">
           <div className="bg-white rounded-t-3xl shadow-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom">

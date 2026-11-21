@@ -46,7 +46,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#fdfbf7]">
+    <main className="min-h-svh flex flex-col items-center justify-center p-6 bg-[#fdfbf7]">
       {/* App Header Branding */}
       <div className="text-center mb-12">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand text-white shadow-lg mb-4">

@@ -57,7 +57,7 @@ export async function getIndependentMenuData() {
 
     sheetData.forEach((row, index) => {
       const categoryName = (row.Category || "General").trim();
-      const catId = categoryName.toLowerCase().replace(/\s+/g, "_");
+      const catId = categoryName.toLowerCase().replace(/\\s+/g, "_");
       const rawName = (
         row.Name ||
         row["Item Name"] ||
@@ -261,7 +261,6 @@ export async function exportSessionByDate(dateStr: string) {
 
     const exportFileName = `Active_Session_Export_${dateStr}.xlsx`;
 
-    // Write workbook directly to a Node.js Buffer instead of writing to disk
     const excelBuffer = XLSX.write(workbook, {
       bookType: "xlsx",
       type: "buffer",

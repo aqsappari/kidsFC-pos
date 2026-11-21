@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import {
   ShoppingCart,
-  CheckCircle2,
   Trash2,
   Printer,
   FileSpreadsheet,
@@ -15,15 +14,20 @@ import {
   RefreshCw,
   History,
   Download,
+  ExternalLink,
+  QrCode,
+  CheckCircle2,
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import {
   saveIndependentOrder,
   getActiveSessionData,
   restartSession,
   deleteActiveSessionOrder,
   exportSessionByDate,
-} from "../cashier-xlsx/actions";
+} from "../cashier-actions";
 import { printThermalReceipt } from "@/utils/printReceipt";
+import { ReceiptView } from "@/components/ReceiptView";
 
 export default function CashierPrimaryPage() {
   const [terminalsState, setTerminalsState] = useState<Record<string, any>>({});
@@ -37,6 +41,12 @@ export default function CashierPrimaryPage() {
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [exportDate, setExportDate] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+
+  // QR Code Modal State
+  const [qrModalData, setQrModalData] = useState<{
+    title: string;
+    url: string;
+  } | null>(null);
 
   useEffect(() => {
     loadSessionInfo();
@@ -85,16 +95,13 @@ export default function CashierPrimaryPage() {
   };
 
   const clearTerminalCart = async (terminalId: string) => {
-    const defaultTable = terminalId.startsWith("table-")
-      ? `Table ${terminalId.split("-")[1]}`
-      : "Takeout / Walk-in";
-
     await updateServerTerminalState(terminalId, {
       ...terminalsState[terminalId],
       cart: [],
-      tableNumber: defaultTable,
+      tableNumber: "",
       paymentMethod: "cash",
       isReadyForCheckout: false,
+      resetTerminal: true,
     });
   };
 
@@ -107,6 +114,7 @@ export default function CashierPrimaryPage() {
     if (tData.cart.length === 0) return;
 
     const tenderedVal = parseFloat(cashTendered[terminalId] || "0") || 0;
+
     const subtotal = tData.cart.reduce(
       (sum: number, item: any) => sum + item.unitPrice * item.quantity,
       0,
@@ -122,7 +130,7 @@ export default function CashierPrimaryPage() {
     setIsCheckingOut(terminalId);
     const res = await saveIndependentOrder({
       paymentMethod: tData.paymentMethod,
-      tableNumber: tData.tableNumber,
+      tableNumber: tData.tableNumber || "Takeout / Walk-in",
       totalAmount: subtotal,
       items: tData.cart,
     });
@@ -132,7 +140,7 @@ export default function CashierPrimaryPage() {
       const newCompleted = {
         orderId: res.orderId,
         queueNumber: res.queueNumber,
-        tableNumber: tData.tableNumber,
+        tableNumber: tData.tableNumber || "Takeout / Walk-in",
         total: subtotal,
         paymentMethod: tData.paymentMethod,
         cashTendered: tData.paymentMethod === "cash" ? tenderedVal : subtotal,
@@ -141,7 +149,7 @@ export default function CashierPrimaryPage() {
             ? Math.max(0, tenderedVal - subtotal)
             : 0,
         date: new Date().toLocaleString(),
-        items: [...tData.cart],
+        items: tData.cart,
       };
       setCompletedOrder(newCompleted);
       await clearTerminalCart(terminalId);
@@ -167,7 +175,7 @@ export default function CashierPrimaryPage() {
       tableNumber: ord.tableNumber,
       total: ord.totalAmount,
       paymentMethod: ord.paymentMethod,
-      cashTendered: ord.totalAmount, // Default representation for history print
+      cashTendered: ord.totalAmount,
       changeDue: 0,
       date: ord.timestamp
         ? new Date(ord.timestamp).toLocaleString()
@@ -252,7 +260,7 @@ export default function CashierPrimaryPage() {
             const isWaiter = tId.toLowerCase().startsWith("waiter");
 
             const buttonLabel = isWaiter
-              ? "🧑‍🍳 Waiter 1"
+              ? "Server / Waiter 1"
               : tId.startsWith("table-")
                 ? `Table ${tId.split("-")[1]}`
                 : tId;
@@ -291,6 +299,17 @@ export default function CashierPrimaryPage() {
             const tId = selectedTerminalId;
             const tData = terminalsState[tId];
             const isWaiter = tId.toLowerCase().startsWith("waiter");
+
+            const origin =
+              typeof window !== "undefined" ? window.location.origin : "";
+            const secondaryTerminalUrl = `${origin}/cashier-secondary?u=${encodeURIComponent(
+              tId,
+            )}${
+              tData.secretToken
+                ? `&token=${encodeURIComponent(tData.secretToken)}`
+                : ""
+            }`;
+
             const subtotal = tData.cart.reduce(
               (sum: number, item: any) => sum + item.unitPrice * item.quantity,
               0,
@@ -316,7 +335,7 @@ export default function CashierPrimaryPage() {
                         {isWaiter ? "Server Terminal" : `Terminal ID: ${tId}`}
                       </span>
                       <span className="text-xs font-bold uppercase text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-                        {tData.tableNumber}
+                        {tData.tableNumber || "Not Selected"}
                       </span>
                     </div>
                     <h3 className="text-lg font-extrabold text-zinc-950 mt-2">
@@ -325,6 +344,29 @@ export default function CashierPrimaryPage() {
                   </div>
 
                   <div className="flex items-center gap-3">
+                    <button
+                      onClick={() =>
+                        setQrModalData({
+                          title: isWaiter
+                            ? "Server Terminal"
+                            : tData.tableNumber || tId,
+                          url: secondaryTerminalUrl,
+                        })
+                      }
+                      className="flex items-center gap-1.5 text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-200 transition-colors cursor-pointer"
+                    >
+                      <QrCode className="w-4 h-4" /> Show QR
+                    </button>
+
+                    <a
+                      href={secondaryTerminalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-1.5 rounded-xl border border-amber-200 transition-colors"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" /> Open Terminal
+                    </a>
+
                     {tData.isReadyForCheckout ? (
                       <span className="flex items-center gap-1.5 text-xs font-bold bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 animate-pulse">
                         <Unlock className="w-4 h-4" /> Ready Flagged
@@ -354,29 +396,36 @@ export default function CashierPrimaryPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {tData.cart.map((item: any) => (
-                      <div
-                        key={item.productId}
-                        className="flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 border border-zinc-100"
-                      >
-                        <div className="flex-1">
-                          <h4 className="font-bold text-zinc-900 text-sm">
-                            {item.name}
-                          </h4>
-                          <span className="text-xs text-zinc-500">
-                            ₱{item.unitPrice.toFixed(2)} each
-                          </span>
+                    {tData.cart.map((item: any) => {
+                      const itemUnitPrice = item.unitPrice;
+                      const lineTotal = itemUnitPrice * item.quantity;
+
+                      return (
+                        <div
+                          key={item.productId}
+                          className="flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 border border-zinc-100"
+                        >
+                          <div className="flex-1">
+                            <h4 className="font-bold text-zinc-900 text-sm">
+                              {item.name}
+                            </h4>
+                            <div className="flex items-center gap-2 text-xs mt-0.5">
+                              <span className="font-bold text-emerald-600">
+                                ₱{itemUnitPrice.toFixed(2)} each
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-6">
+                            <span className="font-bold text-sm text-zinc-700">
+                              Qty: {item.quantity}
+                            </span>
+                            <span className="font-extrabold text-sm text-zinc-950">
+                              ₱{lineTotal.toFixed(2)}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-6">
-                          <span className="font-bold text-sm text-zinc-700">
-                            Qty: {item.quantity}
-                          </span>
-                          <span className="font-extrabold text-sm text-zinc-950">
-                            ₱{(item.unitPrice * item.quantity).toFixed(2)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
@@ -475,6 +524,46 @@ export default function CashierPrimaryPage() {
           })()}
       </div>
 
+      {/* QR CODE POPUP MODAL */}
+      {qrModalData && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setQrModalData(null)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm text-center border border-zinc-100 space-y-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+              <h3 className="text-base font-extrabold text-zinc-950 font-['Montserrat']">
+                Scan for {qrModalData.title}
+              </h3>
+              <button
+                onClick={() => setQrModalData(null)}
+                className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center text-zinc-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-zinc-50 p-6 rounded-2xl border border-zinc-200 flex justify-center">
+              <QRCodeSVG value={qrModalData.url} size={200} level="H" />
+            </div>
+
+            <p className="text-[11px] text-zinc-500 break-all px-2 font-mono bg-zinc-100 py-2 rounded-xl">
+              {qrModalData.url}
+            </p>
+
+            <button
+              onClick={() => setQrModalData(null)}
+              className="w-full py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs cursor-pointer"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* SESSION & HISTORY MODAL */}
       {showSessionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
@@ -493,7 +582,6 @@ export default function CashierPrimaryPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-5 pr-1">
-              {/* Export Box */}
               <div className="bg-zinc-50 p-4 rounded-2xl border border-zinc-200/80 space-y-2">
                 <span className="text-xs font-bold uppercase text-zinc-500 block">
                   Export Session to Excel
@@ -516,7 +604,6 @@ export default function CashierPrimaryPage() {
                 </div>
               </div>
 
-              {/* Order History List */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
@@ -589,7 +676,6 @@ export default function CashierPrimaryPage() {
                 )}
               </div>
 
-              {/* Danger Zone */}
               <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 space-y-3">
                 <span className="text-xs font-bold uppercase text-rose-700 block">
                   Danger Zone
@@ -617,7 +703,7 @@ export default function CashierPrimaryPage() {
           <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-md border border-zinc-100 space-y-6">
             <div className="text-center space-y-1">
               <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto text-xl font-bold">
-                ✓
+                <CheckCircle2 className="w-6 h-6" />
               </div>
               <h3 className="text-xl font-extrabold text-zinc-950 font-['Montserrat']">
                 Order Receipt
@@ -628,47 +714,8 @@ export default function CashierPrimaryPage() {
               </p>
             </div>
 
-            <div
-              id="thermal-receipt"
-              className="bg-zinc-50 p-4 rounded-2xl border border-zinc-200 space-y-2 max-h-48 overflow-y-auto font-mono"
-            >
-              <div className="text-center font-bold text-xs pb-2 border-b border-zinc-200 space-y-0.5">
-                <div className="text-sm font-extrabold tracking-wider">
-                  ORDER LIST
-                </div>
-                <div className="text-xs font-bold bg-zinc-200 text-zinc-900 py-0.5 px-2 rounded-md inline-block my-1">
-                  Queue #{completedOrder.queueNumber} •{" "}
-                  {completedOrder.tableNumber}
-                </div>
-                <div className="text-[10px] font-normal text-zinc-500">
-                  {completedOrder.date}
-                </div>
-              </div>
-              {completedOrder.items.map((item: any, idx: number) => (
-                <div
-                  key={idx}
-                  className="flex justify-between text-xs font-medium text-zinc-800"
-                >
-                  <span>
-                    {item.quantity}x {item.name}
-                  </span>
-                  <span>₱{(item.unitPrice * item.quantity).toFixed(2)}</span>
-                </div>
-              ))}
-              <div className="border-t border-zinc-200 pt-2 space-y-1 text-xs">
-                <div className="flex justify-between font-bold">
-                  <span>TOTAL:</span>
-                  <span>₱{completedOrder.total.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-zinc-500">
-                  <span>Payment ({completedOrder.paymentMethod}):</span>
-                  <span>₱{completedOrder.cashTendered.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-zinc-500">
-                  <span>Change:</span>
-                  <span>₱{completedOrder.changeDue.toFixed(2)}</span>
-                </div>
-              </div>
+            <div className="max-h-64 overflow-y-auto">
+              <ReceiptView order={completedOrder} id="thermal-receipt" />
             </div>
 
             <div className="flex gap-3 pt-2">
