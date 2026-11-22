@@ -26,6 +26,11 @@ export function printThermalReceipt(
             size: 58mm auto;
             margin: 0;
           }
+          * {
+            color: #000 !important;
+            border-color: #000 !important;
+            box-sizing: border-box;
+          }
           body {
             font-family: 'Courier New', Courier, monospace;
             font-size: 11px;
@@ -40,11 +45,34 @@ export function printThermalReceipt(
           .text-center { text-align: center; }
           .text-right { text-align: right; }
           .font-bold { font-weight: bold; }
+          .font-black { font-weight: 900; }
           .uppercase { text-transform: uppercase; }
-          .dash-line {
+          .text-base { font-size: 15px; line-height: 1.2; }
+          .text-sm { font-size: 13px; }
+          .text-xs { font-size: 11px; }
+          .text-\\[11px\\] { font-size: 11px; }
+          .text-\\[10px\\] { font-size: 10px; }
+          .badge-box {
+            display: block;
+            border: 2px solid #000;
+            padding: 4px 6px;
+            margin: 6px 0;
+            text-align: center;
+          }
+          .border-b-2 {
+            border-bottom: 2px solid #000;
+            padding-bottom: 6px;
+            margin-bottom: 6px;
+          }
+          .border-b {
             border-bottom: 1px dashed #000;
-            margin: 4px 0;
-            width: 100%;
+            padding-bottom: 4px;
+            margin-bottom: 4px;
+          }
+          .border-t {
+            border-top: 1px dashed #000;
+            padding-top: 4px;
+            margin-top: 6px;
           }
           .flex {
             display: flex;
