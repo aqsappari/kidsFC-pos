@@ -17,6 +17,7 @@ import {
   ExternalLink,
   QrCode,
   CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -100,7 +101,10 @@ export default function CashierPrimaryPage() {
       cart: [],
       tableNumber: "",
       paymentMethod: "cash",
+      cashTendered: 0,
+      changeDue: 0,
       isReadyForCheckout: false,
+      editingOrderId: undefined,
       resetTerminal: true,
     });
   };
@@ -113,7 +117,13 @@ export default function CashierPrimaryPage() {
     }
     if (tData.cart.length === 0) return;
 
-    const tenderedVal = parseFloat(cashTendered[terminalId] || "0") || 0;
+    const tenderedVal =
+      tData.paymentMethod === "cash"
+        ? parseFloat(cashTendered[terminalId] ?? tData.cashTendered) || 0
+        : tData.cart.reduce(
+            (sum: number, item: any) => sum + item.unitPrice * item.quantity,
+            0,
+          );
 
     const subtotal = tData.cart.reduce(
       (sum: number, item: any) => sum + item.unitPrice * item.quantity,
@@ -128,6 +138,12 @@ export default function CashierPrimaryPage() {
     }
 
     setIsCheckingOut(terminalId);
+
+    // If this checkout is from an emergency edit, remove the old order first
+    if (tData.editingOrderId) {
+      await deleteActiveSessionOrder(tData.editingOrderId);
+    }
+
     const res = await saveIndependentOrder({
       paymentMethod: tData.paymentMethod,
       tableNumber: tData.tableNumber || "Takeout / Walk-in",
@@ -143,7 +159,7 @@ export default function CashierPrimaryPage() {
         tableNumber: tData.tableNumber || "Takeout / Walk-in",
         total: subtotal,
         paymentMethod: tData.paymentMethod,
-        cashTendered: tData.paymentMethod === "cash" ? tenderedVal : subtotal,
+        cashTendered: tenderedVal,
         changeDue:
           tData.paymentMethod === "cash"
             ? Math.max(0, tenderedVal - subtotal)
@@ -154,9 +170,42 @@ export default function CashierPrimaryPage() {
       setCompletedOrder(newCompleted);
       await clearTerminalCart(terminalId);
       loadSessionInfo();
+      setShowSessionModal(false);
     } else {
       alert("Checkout failed.");
     }
+  };
+
+  const handleEmergencyEditOrder = async (ord: any) => {
+    // Load the order items and details into emergency-edit terminal state
+    const emergencyToken =
+      terminalsState["emergency-edit"]?.secretToken || "emergency_sec_pass77";
+    const mappedCart = ord.items.map((i: any) => ({
+      productId:
+        i.productId ||
+        "xlsx_item_" + Math.random().toString(36).substring(2, 6),
+      name: i.name,
+      unitPrice: i.unitPrice,
+      originalPrice: i.unitPrice,
+      quantity: i.quantity,
+    }));
+
+    await updateServerTerminalState("emergency-edit", {
+      cart: mappedCart,
+      tableNumber: ord.tableNumber,
+      paymentMethod: ord.paymentMethod || "cash",
+      cashTendered: ord.totalAmount,
+      changeDue: 0,
+      isReadyForCheckout: false,
+      editingOrderId: ord.orderId,
+    });
+
+    setCashTendered({
+      ...cashTendered,
+      "emergency-edit": String(ord.totalAmount),
+    });
+    setSelectedTerminalId("emergency-edit");
+    setShowSessionModal(false);
   };
 
   const handleDeleteSessionOrder = async (orderId: string) => {
@@ -258,12 +307,15 @@ export default function CashierPrimaryPage() {
             const isReady = tData?.isReadyForCheckout;
             const isSelected = selectedTerminalId === tId;
             const isWaiter = tId.toLowerCase().startsWith("waiter");
+            const isEmergency = tId.toLowerCase().includes("emergency");
 
-            const buttonLabel = isWaiter
-              ? "Server / Waiter 1"
-              : tId.startsWith("table-")
-                ? `Table ${tId.split("-")[1]}`
-                : tId;
+            const buttonLabel = isEmergency
+              ? "🚨 Emergency Edit"
+              : isWaiter
+                ? "Server / Waiter 1"
+                : tId.startsWith("table-")
+                  ? `Table ${tId.split("-")[1]}`
+                  : tId;
 
             return (
               <button
@@ -299,6 +351,7 @@ export default function CashierPrimaryPage() {
             const tId = selectedTerminalId;
             const tData = terminalsState[tId];
             const isWaiter = tId.toLowerCase().startsWith("waiter");
+            const isEmergency = tId.toLowerCase().includes("emergency");
 
             const origin =
               typeof window !== "undefined" ? window.location.origin : "";
@@ -314,7 +367,8 @@ export default function CashierPrimaryPage() {
               (sum: number, item: any) => sum + item.unitPrice * item.quantity,
               0,
             );
-            const tenderedVal = parseFloat(cashTendered[tId] || "0") || 0;
+            const tenderedVal =
+              parseFloat(cashTendered[tId] ?? tData.cashTendered ?? "0") || 0;
             const changeDue =
               tData.paymentMethod === "cash"
                 ? Math.max(0, tenderedVal - subtotal)
@@ -327,16 +381,27 @@ export default function CashierPrimaryPage() {
                     <div className="flex items-center gap-2">
                       <span
                         className={`text-xs font-bold uppercase px-3 py-1 rounded-full border ${
-                          isWaiter
-                            ? "text-indigo-800 bg-indigo-50 border-indigo-200"
-                            : "text-emerald-800 bg-emerald-50 border-emerald-200"
+                          isEmergency
+                            ? "text-rose-800 bg-rose-50 border-rose-200"
+                            : isWaiter
+                              ? "text-indigo-800 bg-indigo-50 border-indigo-200"
+                              : "text-emerald-800 bg-emerald-50 border-emerald-200"
                         }`}
                       >
-                        {isWaiter ? "Server Terminal" : `Terminal ID: ${tId}`}
+                        {isEmergency
+                          ? "🚨 Emergency Edit Terminal"
+                          : isWaiter
+                            ? "Server Terminal"
+                            : `Terminal ID: ${tId}`}
                       </span>
                       <span className="text-xs font-bold uppercase text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
                         {tData.tableNumber || "Not Selected"}
                       </span>
+                      {tData.editingOrderId && (
+                        <span className="text-xs font-extrabold bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-md">
+                          Editing Order #{tData.editingOrderId}
+                        </span>
+                      )}
                     </div>
                     <h3 className="text-lg font-extrabold text-zinc-950 mt-2">
                       Cart Items ({tData.cart.length})
@@ -347,9 +412,11 @@ export default function CashierPrimaryPage() {
                     <button
                       onClick={() =>
                         setQrModalData({
-                          title: isWaiter
-                            ? "Server Terminal"
-                            : tData.tableNumber || tId,
+                          title: isEmergency
+                            ? "Emergency Terminal"
+                            : isWaiter
+                              ? "Server Terminal"
+                              : tData.tableNumber || tId,
                           url: secondaryTerminalUrl,
                         })
                       }
@@ -467,13 +534,20 @@ export default function CashierPrimaryPage() {
                             <input
                               type="number"
                               placeholder="0.00"
-                              value={cashTendered[tId] || ""}
-                              onChange={(e) =>
+                              value={
+                                cashTendered[tId] ?? tData.cashTendered ?? ""
+                              }
+                              onChange={(e) => {
+                                const val = e.target.value;
                                 setCashTendered({
                                   ...cashTendered,
-                                  [tId]: e.target.value,
-                                })
-                              }
+                                  [tId]: val,
+                                });
+                                updateServerTerminalState(tId, {
+                                  ...tData,
+                                  cashTendered: parseFloat(val) || 0,
+                                });
+                              }}
                               className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold text-zinc-950 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             />
                           </div>
@@ -652,6 +726,13 @@ export default function CashierPrimaryPage() {
                             ₱{ord.totalAmount.toFixed(2)}
                           </span>
                           <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleEmergencyEditOrder(ord)}
+                              title="Emergency Edit Order"
+                              className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5" /> Edit
+                            </button>
                             <button
                               onClick={() => handlePrintHistoryOrder(ord)}
                               title="Print Receipt"

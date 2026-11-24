@@ -1,4 +1,5 @@
 import React from "react";
+import { QRCodeSVG } from "qrcode.react";
 
 export interface ReceiptData {
   queueNumber: number | string;
@@ -30,6 +31,11 @@ export function ReceiptView({
     order.tableNumber.toLowerCase().includes("takeout") ||
     order.tableNumber.toLowerCase().includes("walk-in");
 
+  const wifiSsid = process.env.NEXT_PUBLIC_WIFI_SSID || "FREE WIFI V2";
+  const wifiPassword = process.env.NEXT_PUBLIC_WIFI_PASSWORD || "fw@21436587";
+  const wifiEncryption = process.env.NEXT_PUBLIC_WIFI_ENCRYPTION || "WPA";
+  const wifiString = `WIFI:S:${wifiSsid};T:${wifiEncryption};P:${wifiPassword};;`;
+
   return (
     <div
       id={id}
@@ -42,7 +48,6 @@ export function ReceiptView({
         </div>
         <div className="text-[10px] text-black">Official Receipt</div>
 
-        {/* High-contrast Black & White Emphasis */}
         {isTakeout ? (
           <div className="badge-box py-1.5 px-3 rounded-md border-2 border-black bg-white text-black my-1 inline-block">
             <div className="text-[10px] font-bold uppercase tracking-wider">
@@ -110,8 +115,42 @@ export function ReceiptView({
         )}
       </div>
 
-      <div className="text-center text-[10px] text-black pt-2 border-t border-dashed border-black mt-2">
-        <p className="font-bold">FREE WIFI : kids@2026_123</p>
+      {/* Tightly Centered Vertical Wi-Fi Section */}
+      <div
+        className="pt-2 pb-1 border-t border-dashed border-black mt-2 text-center"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <p
+          className="font-bold text-[10px] uppercase tracking-wide"
+          style={{ margin: "0 0 4px 0" }}
+        >
+          SCAN FOR FREE WI-FI
+        </p>
+        <div
+          style={{
+            margin: "2px 0",
+            padding: "2px",
+            background: "#fff",
+            display: "inline-block",
+          }}
+        >
+          <QRCodeSVG value={wifiString} size={80} level="M" />
+        </div>
+        <div
+          className="text-[10px] font-bold"
+          style={{ margin: "4px 0 0 0", lineHeight: "1.3" }}
+        >
+          <div>SSID: {wifiSsid}</div>
+          <div>PASS: {wifiPassword}</div>
+        </div>
+      </div>
+
+      <div className="text-center text-[10px] text-black pt-2 border-t border-dashed border-black mt-1">
         <p>Thank you for dining with us!</p>
         <p className="font-bold">
           Please keep this receipt for your reference.

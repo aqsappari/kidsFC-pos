@@ -23,7 +23,7 @@ export function printThermalReceipt(
         <title>Receipt</title>
         <style>
           @page {
-            size: 58mm auto;
+            size: 57mm auto;
             margin: 0;
           }
           * {
@@ -36,14 +36,15 @@ export function printThermalReceipt(
             font-size: 11px;
             font-weight: bold;
             line-height: 1.25;
-            width: 48mm;
+            width: 47mm;
             margin: 0 auto;
             padding: 2mm 0;
             color: #000;
             background: #fff;
+            text-align: left;
           }
-          .text-center { text-align: center; }
-          .text-right { text-align: right; }
+          .text-center { text-align: center !important; }
+          .text-right { text-align: right !important; }
           .font-bold { font-weight: bold; }
           .font-black { font-weight: 900; }
           .uppercase { text-transform: uppercase; }
@@ -56,7 +57,7 @@ export function printThermalReceipt(
             display: block;
             border: 2px solid #000;
             padding: 4px 6px;
-            margin: 6px 0;
+            margin: 6px auto;
             text-align: center;
           }
           .border-b-2 {

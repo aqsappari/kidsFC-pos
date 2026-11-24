@@ -30,7 +30,7 @@ body {
 
 @media print {
   @page {
-    size: 58mm auto;
+    size: 57mm auto;
     margin: 0mm;
   }
 
@@ -52,7 +52,7 @@ body {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
-    width: 58mm !important;
+    width: 57mm !important;
     margin: 0 !important;
     padding: 2mm !important;
     background: white !important;

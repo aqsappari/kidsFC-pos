@@ -19,6 +19,10 @@ const TERMINAL_CONFIGS: Record<
     tableNumber: "Takeout / Walk-in",
     secretToken: "waiter_sec_pass99",
   },
+  "emergency-edit": {
+    tableNumber: "Emergency Edit",
+    secretToken: "emergency_sec_pass77",
+  },
 };
 
 let terminalCarts: Record<
@@ -27,9 +31,12 @@ let terminalCarts: Record<
     cart: any[];
     tableNumber: string;
     paymentMethod: string;
+    cashTendered: number;
+    changeDue: number;
     isReadyForCheckout: boolean;
     updatedAt: number;
     secretToken: string;
+    editingOrderId?: string;
   }
 > = {};
 
@@ -39,6 +46,8 @@ for (const [tId, config] of Object.entries(TERMINAL_CONFIGS)) {
     cart: [],
     tableNumber: "",
     paymentMethod: "cash",
+    cashTendered: 0,
+    changeDue: 0,
     isReadyForCheckout: false,
     updatedAt: Date.now(),
     secretToken: config.secretToken,
@@ -102,6 +111,8 @@ export async function POST(req: Request) {
         cart: [],
         tableNumber: "",
         paymentMethod: "cash",
+        cashTendered: 0,
+        changeDue: 0,
         isReadyForCheckout: false,
         updatedAt: Date.now(),
         secretToken:
@@ -115,7 +126,10 @@ export async function POST(req: Request) {
         cart: [],
         tableNumber: "",
         paymentMethod: "cash",
+        cashTendered: 0,
+        changeDue: 0,
         isReadyForCheckout: false,
+        editingOrderId: undefined,
         updatedAt: Date.now(),
       };
     } else {
