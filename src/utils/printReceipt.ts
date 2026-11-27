@@ -23,28 +23,57 @@ export function printThermalReceipt(
         <title>Receipt</title>
         <style>
           @page {
-            size: 58mm auto;
+            size: 57mm auto;
             margin: 0;
+          }
+          * {
+            color: #000 !important;
+            border-color: #000 !important;
+            box-sizing: border-box;
           }
           body {
             font-family: 'Courier New', Courier, monospace;
             font-size: 11px;
             font-weight: bold;
             line-height: 1.25;
-            width: 48mm;
+            width: 47mm;
             margin: 0 auto;
             padding: 2mm 0;
             color: #000;
             background: #fff;
+            text-align: left;
           }
-          .text-center { text-align: center; }
-          .text-right { text-align: right; }
+          .text-center { text-align: center !important; }
+          .text-right { text-align: right !important; }
           .font-bold { font-weight: bold; }
+          .font-black { font-weight: 900; }
           .uppercase { text-transform: uppercase; }
-          .dash-line {
+          .text-base { font-size: 15px; line-height: 1.2; }
+          .text-sm { font-size: 13px; }
+          .text-xs { font-size: 11px; }
+          .text-\\[11px\\] { font-size: 11px; }
+          .text-\\[10px\\] { font-size: 10px; }
+          .badge-box {
+            display: block;
+            border: 2px solid #000;
+            padding: 4px 6px;
+            margin: 6px auto;
+            text-align: center;
+          }
+          .border-b-2 {
+            border-bottom: 2px solid #000;
+            padding-bottom: 6px;
+            margin-bottom: 6px;
+          }
+          .border-b {
             border-bottom: 1px dashed #000;
-            margin: 4px 0;
-            width: 100%;
+            padding-bottom: 4px;
+            margin-bottom: 4px;
+          }
+          .border-t {
+            border-top: 1px dashed #000;
+            padding-top: 4px;
+            margin-top: 6px;
           }
           .flex {
             display: flex;

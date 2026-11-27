@@ -1,39 +1,313 @@
 {
-  "sessionId": "session_2026-11-21_xm3d",
-  "date": "2026-11-21",
+  "sessionId": "session_2026-11-24_0oc6",
+  "date": "2026-11-24",
   "orders": [
     {
-      "orderId": "xlsx_ord_rf8fuul",
+      "orderId": "xlsx_ord_b7ti0ib",
       "queueNumber": 1,
       "tableNumber": "Takeout / Walk-in",
-      "timestamp": "2026-11-21T02:49:10.877Z",
+      "timestamp": "2026-11-24T02:11:39.888Z",
       "paymentMethod": "cash",
-      "totalAmount": 545,
+      "totalAmount": 45,
       "items": [
         {
-          "productId": "xlsx_item_6",
+          "productId": "xlsx_item_28",
+          "name": "Empanada (Beef)",
+          "unitPrice": 15,
+          "originalPrice": 15,
+          "quantity": 3
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_ux05ic2",
+      "queueNumber": 2,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-24T03:20:00.063Z",
+      "paymentMethod": "cash",
+      "totalAmount": 95,
+      "items": [
+        {
+          "productId": "xlsx_item_8",
           "name": "Barbecque Chicken (Meal)",
           "unitPrice": 95,
           "originalPrice": 95,
-          "quantity": 3
-        },
-        {
-          "productId": "xlsx_item_27",
-          "name": "Regular Fries",
-          "unitPrice": 50,
-          "originalPrice": 50,
           "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_uwgdlvi",
+      "queueNumber": 3,
+      "tableNumber": "Table 1",
+      "timestamp": "2026-11-24T04:20:30.550Z",
+      "paymentMethod": "gcash",
+      "totalAmount": 350,
+      "items": [
+        {
+          "productId": "xlsx_item_46",
+          "name": "Iced Caramel Macchiato (Regular)",
+          "unitPrice": 80,
+          "originalPrice": 80,
+          "quantity": 2
         },
         {
-          "productId": "xlsx_item_53",
-          "name": "Strawberry",
+          "productId": "xlsx_item_8",
+          "name": "Barbecque Chicken (Meal)",
+          "unitPrice": 95,
+          "originalPrice": 95,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_u6u90nm",
+      "queueNumber": 4,
+      "tableNumber": "Table 1",
+      "timestamp": "2026-11-24T04:47:32.192Z",
+      "paymentMethod": "cash",
+      "totalAmount": 15,
+      "items": [
+        {
+          "productId": "xlsx_item_28",
+          "name": "Empanada (Beef)",
+          "unitPrice": 15,
+          "originalPrice": 15,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_yee5ajk",
+      "queueNumber": 5,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-24T04:52:26.772Z",
+      "paymentMethod": "cash",
+      "totalAmount": 300,
+      "items": [
+        {
+          "productId": "xlsx_item_28",
+          "name": "Empanada (Beef)",
+          "unitPrice": 15,
+          "originalPrice": 15,
+          "quantity": 20
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_uusg9rh",
+      "queueNumber": 6,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-24T05:36:18.007Z",
+      "paymentMethod": "cash",
+      "totalAmount": 926,
+      "items": [
+        {
+          "productId": "xlsx_item_1",
+          "name": "Fried Chicken (Solo)",
+          "unitPrice": 49,
+          "originalPrice": 49,
+          "quantity": 2
+        },
+        {
+          "productId": "xlsx_item_3",
+          "name": "Sweet Garlic Chicken (Solo)",
           "unitPrice": 70,
           "originalPrice": 70,
           "quantity": 2
         },
         {
-          "productId": "xlsx_item_54",
-          "name": "Watermelon",
+          "productId": "xlsx_item_14",
+          "name": "Pancit Mami (Solo)",
+          "unitPrice": 65,
+          "originalPrice": 65,
+          "quantity": 1
+        },
+        {
+          "productId": "xlsx_item_15",
+          "name": "Beef Steak (Solo)",
+          "unitPrice": 100,
+          "originalPrice": 100,
+          "quantity": 1
+        },
+        {
+          "productId": "xlsx_item_28",
+          "name": "Empanada (Beef)",
+          "unitPrice": 15,
+          "originalPrice": 15,
+          "quantity": 9
+        },
+        {
+          "productId": "xlsx_item_26",
+          "name": "Pastil (Togue)",
+          "unitPrice": 8,
+          "originalPrice": 8,
+          "quantity": 1
+        },
+        {
+          "productId": "xlsx_item_60",
+          "name": "FS Blueberry",
+          "unitPrice": 70,
+          "originalPrice": 70,
+          "quantity": 2
+        },
+        {
+          "productId": "xlsx_item_63",
+          "name": "FS Blue Lemonade",
+          "unitPrice": 70,
+          "originalPrice": 70,
+          "quantity": 2
+        },
+        {
+          "productId": "xlsx_item_41",
+          "name": "Chocolate Crinkles (x3)",
+          "unitPrice": 100,
+          "originalPrice": 100,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_0gp2r4l",
+      "queueNumber": 7,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-24T05:36:41.304Z",
+      "paymentMethod": "cash",
+      "totalAmount": 150,
+      "items": [
+        {
+          "productId": "xlsx_item_7",
+          "name": "Barbecque Chicken (Solo)",
+          "unitPrice": 75,
+          "originalPrice": 75,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_mdjxeay",
+      "queueNumber": 8,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-24T05:37:02.957Z",
+      "paymentMethod": "cash",
+      "totalAmount": 120,
+      "items": [
+        {
+          "productId": "xlsx_item_16",
+          "name": "Beef Steak (Meal)",
+          "unitPrice": 120,
+          "originalPrice": 120,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_ubxxzco",
+      "queueNumber": 9,
+      "tableNumber": "Table 1",
+      "timestamp": "2026-11-24T05:39:23.902Z",
+      "paymentMethod": "cash",
+      "totalAmount": 312,
+      "items": [
+        {
+          "productId": "xlsx_item_9",
+          "name": "Barbecque Chicken (Unli)",
+          "unitPrice": 120,
+          "originalPrice": 120,
+          "quantity": 2
+        },
+        {
+          "productId": "xlsx_item_25",
+          "name": "Pastil (Bihon)",
+          "unitPrice": 8,
+          "originalPrice": 8,
+          "quantity": 2
+        },
+        {
+          "productId": "xlsx_item_26",
+          "name": "Pastil (Togue)",
+          "unitPrice": 8,
+          "originalPrice": 8,
+          "quantity": 2
+        },
+        {
+          "productId": "xlsx_item_86",
+          "name": "Bottled Water (500ml)",
+          "unitPrice": 20,
+          "originalPrice": 20,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_arlrzbx",
+      "queueNumber": 10,
+      "tableNumber": "Table 1",
+      "timestamp": "2026-11-24T08:12:03.358Z",
+      "paymentMethod": "cash",
+      "totalAmount": 49,
+      "items": [
+        {
+          "productId": "xlsx_item_1",
+          "name": "Fried Chicken (Solo)",
+          "unitPrice": 49,
+          "originalPrice": 49,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_ntka9p5",
+      "queueNumber": 11,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-27T08:07:49.463Z",
+      "paymentMethod": "cash",
+      "totalAmount": 60,
+      "items": [
+        {
+          "productId": "xlsx_item_88",
+          "name": "Bottled Water (500ml)",
+          "unitPrice": 20,
+          "originalPrice": 20,
+          "quantity": 3
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_pjol99k",
+      "queueNumber": 12,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-27T08:18:22.031Z",
+      "paymentMethod": "cash",
+      "totalAmount": 189,
+      "items": [
+        {
+          "productId": "xlsx_item_9",
+          "name": "Barbecque Chicken (Unli)",
+          "unitPrice": 120,
+          "originalPrice": 120,
+          "quantity": 1
+        },
+        {
+          "productId": "xlsx_item_2",
+          "name": "Fried Chicken (Meal)",
+          "unitPrice": 69,
+          "originalPrice": 69,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_42bel13",
+      "queueNumber": 13,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-27T08:19:04.452Z",
+      "paymentMethod": "cash",
+      "totalAmount": 70,
+      "items": [
+        {
+          "productId": "xlsx_item_5",
+          "name": "Sweet Chili Chicken (Solo)",
           "unitPrice": 70,
           "originalPrice": 70,
           "quantity": 1
@@ -41,19 +315,128 @@
       ]
     },
     {
-      "orderId": "xlsx_ord_ecrrdi8",
-      "queueNumber": 2,
+      "orderId": "xlsx_ord_m9hin7o",
+      "queueNumber": 14,
       "tableNumber": "Takeout / Walk-in",
-      "timestamp": "2026-11-21T02:53:27.555Z",
+      "timestamp": "2026-11-27T08:19:41.093Z",
       "paymentMethod": "cash",
-      "totalAmount": 64,
+      "totalAmount": 50,
       "items": [
         {
-          "productId": "xlsx_item_23",
-          "name": "Pastil (Togue)",
-          "unitPrice": 8,
-          "originalPrice": 8,
-          "quantity": 8
+          "productId": "xlsx_item_92",
+          "name": "Papaya Relish (Atsara) (Atsara)",
+          "unitPrice": 50,
+          "originalPrice": 50,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_zrlwcp6",
+      "queueNumber": 15,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-27T08:20:38.720Z",
+      "paymentMethod": "cash",
+      "totalAmount": 30,
+      "items": [
+        {
+          "productId": "xlsx_item_89",
+          "name": "Softdrinks (Coke)",
+          "unitPrice": 30,
+          "originalPrice": 30,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_0lv8t9a",
+      "queueNumber": 16,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-27T08:55:58.468Z",
+      "paymentMethod": "cash",
+      "totalAmount": 70,
+      "items": [
+        {
+          "productId": "xlsx_item_3",
+          "name": "Sweet Garlic Chicken (Solo)",
+          "unitPrice": 70,
+          "originalPrice": 70,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_xn169k9",
+      "queueNumber": 17,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-27T15:04:57.675Z",
+      "paymentMethod": "gcash",
+      "totalAmount": 170,
+      "items": [
+        {
+          "productId": "xlsx_item_10",
+          "name": "Chicken Steak (Solo)",
+          "unitPrice": 80,
+          "originalPrice": 80,
+          "quantity": 1
+        },
+        {
+          "productId": "xlsx_item_6",
+          "name": "Sweet Chili Chicken (Meal)",
+          "unitPrice": 90,
+          "originalPrice": 90,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_f1g33rw",
+      "queueNumber": 18,
+      "tableNumber": "Takeout / Walk-in",
+      "timestamp": "2026-11-27T15:05:38.726Z",
+      "paymentMethod": "gcash",
+      "totalAmount": 196,
+      "items": [
+        {
+          "productId": "xlsx_item_1",
+          "name": "Fried Chicken (Solo)",
+          "unitPrice": 49,
+          "originalPrice": 49,
+          "quantity": 4
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_jlsss4d",
+      "queueNumber": 19,
+      "tableNumber": "Table 3",
+      "timestamp": "2026-11-27T15:17:08.034Z",
+      "paymentMethod": "cash",
+      "totalAmount": 90,
+      "items": [
+        {
+          "productId": "xlsx_item_6",
+          "name": "Sweet Chili Chicken (Meal)",
+          "unitPrice": 90,
+          "originalPrice": 90,
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "orderId": "xlsx_ord_afe64bz",
+      "queueNumber": 20,
+      "tableNumber": "Table 1",
+      "timestamp": "2026-11-27T15:17:58.464Z",
+      "paymentMethod": "cash",
+      "totalAmount": 70,
+      "items": [
+        {
+          "productId": "xlsx_item_3",
+          "name": "Sweet Garlic Chicken (Solo)",
+          "unitPrice": 70,
+          "originalPrice": 70,
+          "quantity": 1
         }
       ]
     }

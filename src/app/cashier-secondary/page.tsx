@@ -18,7 +18,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldAlert,
+  Wifi,
+  AlertTriangle,
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import {
   getIndependentMenuData,
   type GroupedProduct,
@@ -50,6 +53,7 @@ interface CartContentProps {
   subtotal: number;
   isReadyForCheckout: boolean;
   toggleReadyForCheckout: () => void;
+  editingOrderId?: string;
   onCloseMobile?: () => void;
 }
 
@@ -65,14 +69,24 @@ function CartContent({
   subtotal,
   isReadyForCheckout,
   toggleReadyForCheckout,
+  editingOrderId,
   onCloseMobile,
 }: CartContentProps) {
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between shrink-0">
-        <h2 className="font-bold text-zinc-950 font-['Montserrat'] flex items-center gap-2 text-sm sm:text-base">
-          <ShoppingCart className="w-5 h-5 text-amber-600" /> Active Order Cart
-        </h2>
+        <div>
+          <h2 className="font-bold text-zinc-950 font-['Montserrat'] flex items-center gap-2 text-sm sm:text-base">
+            <ShoppingCart className="w-5 h-5 text-amber-600" /> Active Order
+            Cart
+          </h2>
+          {editingOrderId && (
+            <span className="text-[10px] bg-rose-100 text-rose-800 font-extrabold px-2 py-0.5 rounded-md mt-1 inline-flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" /> Emergency Edit: #
+              {editingOrderId}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           {cart.length > 0 && !isReadyForCheckout && (
             <button
@@ -216,9 +230,7 @@ function CartContent({
           <CheckCircle2 className="w-4 h-4" />
           {isReadyForCheckout
             ? "Ready Flagged (Click to Unflag)"
-            : !tableNumber
-              ? "Select Dine-in/Takeout First"
-              : "Flag Ready for Checkout"}
+            : "Flag Ready for Checkout"}
         </button>
       </div>
     </div>
@@ -232,10 +244,13 @@ function CashierSecondaryContent() {
 
   const terminalId = uParam || "table-1";
   const isWaiterTerminal = terminalId.toLowerCase().startsWith("waiter");
+  const isEmergencyTerminal = terminalId.toLowerCase().includes("emergency");
 
-  const displayHeaderTitle = isWaiterTerminal
-    ? "Server / Waiter Terminal"
-    : `Terminal: ${terminalId}`;
+  const displayHeaderTitle = isEmergencyTerminal
+    ? "🚨 Emergency Order Edit Terminal"
+    : isWaiterTerminal
+      ? "Server / Waiter Terminal"
+      : `Terminal: ${terminalId}`;
 
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [authError, setAuthError] = useState("");
@@ -248,28 +263,24 @@ function CashierSecondaryContent() {
   const [tableNumber, setTableNumber] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [isReadyForCheckout, setIsReadyForCheckout] = useState(false);
+  const [editingOrderId, setEditingOrderId] = useState<string | undefined>();
 
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
-  // Menu Modal State
   const [isMenuModalOpen, setIsMenuModalOpen] = useState(false);
   const [currentMenuPage, setCurrentMenuPage] = useState<number>(0);
+
   const menuPages = [
-    {
-      title: "Page 1: Food & Snacks",
-      src: "/Foods.jfif",
-    },
-    {
-      title: "Page 2: Beverages",
-      src: "/Drinks.jfif",
-    },
-    {
-      title: "Page 3: Free WIFI",
-      src: "/free-wifi.png",
-    },
+    { title: "Page 1: Food & Snacks", src: "/Foods.jfif", isQr: false },
+    { title: "Page 2: Beverages", src: "/Drinks.jfif", isQr: false },
+    { title: "Page 3: Free WIFI", src: "", isQr: true },
   ];
 
-  // Variant Modal State
+  const wifiSsid = process.env.NEXT_PUBLIC_WIFI_SSID || "FREE WIFI V2";
+  const wifiPassword = process.env.NEXT_PUBLIC_WIFI_PASSWORD || "fw@21436587";
+  const wifiEncryption = process.env.NEXT_PUBLIC_WIFI_ENCRYPTION || "WPA";
+  const wifiString = `WIFI:S:${wifiSsid};T:${wifiEncryption};P:${wifiPassword};;`;
+
   const [variantModalProduct, setVariantModalProduct] =
     useState<GroupedProduct | null>(null);
   const [modalQty, setModalQty] = useState<number>(1);
@@ -277,7 +288,6 @@ function CashierSecondaryContent() {
   const catalogScrollRef = useRef<HTMLDivElement>(null);
   const prevCartLengthRef = useRef(cart.length);
 
-  // Local transition hook to reset category, mobile cart drawer, and table when cart transitions from > 0 to 0
   useEffect(() => {
     if (prevCartLengthRef.current > 0 && cart.length === 0) {
       setSelectedCategory("all");
@@ -321,6 +331,7 @@ function CashierSecondaryContent() {
         if (tData) {
           const newCart = tData.cart || [];
           setCart(newCart);
+          setEditingOrderId(tData.editingOrderId);
 
           if (newCart.length === 0) {
             setSelectedCategory("all");
@@ -374,7 +385,9 @@ function CashierSecondaryContent() {
         cart: newCart,
         tableNumber: newTable,
         paymentMethod: newPayment,
+        cashTendered: 0,
         isReadyForCheckout: newReadyState,
+        editingOrderId,
       }),
     });
   };
@@ -471,6 +484,7 @@ function CashierSecondaryContent() {
       );
       return;
     }
+
     const nextState = !isReadyForCheckout;
     setIsReadyForCheckout(nextState);
     await updateSharedCartOnServer(cart, tableNumber, paymentMethod, nextState);
@@ -521,15 +535,20 @@ function CashierSecondaryContent() {
     subtotal,
     isReadyForCheckout,
     toggleReadyForCheckout,
+    editingOrderId,
   };
 
   return (
     <div className="h-screen bg-[#fdfbf7] flex flex-col font-sans overflow-hidden">
-      <header className="bg-white border-b border-zinc-200 px-6 py-4 flex items-center justify-between shadow-xs shrink-0 z-20">
+      <header
+        className={`border-b px-6 py-4 flex items-center justify-between shadow-xs shrink-0 z-20 ${isEmergencyTerminal ? "bg-rose-50 border-rose-200" : "bg-white border-zinc-200"}`}
+      >
         <div className="flex items-center gap-3">
-          <h1 className="text-lg sm:text-xl font-extrabold text-zinc-950 font-['Montserrat'] flex items-center gap-2">
+          <h1
+            className={`text-lg sm:text-xl font-extrabold font-['Montserrat'] flex items-center gap-2 ${isEmergencyTerminal ? "text-rose-900" : "text-zinc-950"}`}
+          >
             <FileSpreadsheet
-              className={`w-5 h-5 ${isWaiterTerminal ? "text-indigo-600" : "text-amber-600"}`}
+              className={`w-5 h-5 ${isEmergencyTerminal ? "text-rose-600" : isWaiterTerminal ? "text-indigo-600" : "text-amber-600"}`}
             />
             {displayHeaderTitle}
           </h1>
@@ -700,11 +719,36 @@ function CashierSecondaryContent() {
             </div>
 
             <div className="relative flex-1 bg-zinc-950 flex items-center justify-center overflow-auto p-4 min-h-[450px]">
-              <img
-                src={menuPages[currentMenuPage].src}
-                alt="Menu Page"
-                className="max-h-[68vh] w-auto object-contain rounded-xl shadow-lg"
-              />
+              {menuPages[currentMenuPage].isQr ? (
+                <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center justify-center text-center space-y-4 max-w-sm mx-auto">
+                  <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+                    <Wifi className="w-6 h-6" />
+                  </div>
+                  <h4 className="font-extrabold text-zinc-950 text-lg font-['Montserrat']">
+                    Free Guest Wi-Fi
+                  </h4>
+                  <p className="text-xs text-zinc-500">
+                    Scan the QR code below with your phone camera to connect
+                    instantly.
+                  </p>
+                  <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-2xl inline-block">
+                    <QRCodeSVG value={wifiString} size={180} level="H" />
+                  </div>
+                  <div className="text-xs font-mono text-zinc-700 bg-zinc-100 px-3 py-2 rounded-xl w-full">
+                    <span className="text-zinc-500">Network:</span>{" "}
+                    <strong>{wifiSsid}</strong>
+                    <br />
+                    <span className="text-zinc-500">Password:</span>{" "}
+                    <strong>{wifiPassword}</strong>
+                  </div>
+                </div>
+              ) : (
+                <img
+                  src={menuPages[currentMenuPage].src}
+                  alt="Menu Page"
+                  className="max-h-[68vh] w-auto object-contain rounded-xl shadow-lg"
+                />
+              )}
 
               <button
                 onClick={() =>
