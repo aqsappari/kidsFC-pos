@@ -50,8 +50,6 @@ interface CartContentProps {
   setTableNumber: (t: string) => void;
   paymentMethod: string;
   setPaymentMethod: (p: string) => void;
-  cashTendered: number;
-  setCashTendered: (c: number) => void;
   subtotal: number;
   isReadyForCheckout: boolean;
   toggleReadyForCheckout: () => void;
@@ -68,17 +66,12 @@ function CartContent({
   setTableNumber,
   paymentMethod,
   setPaymentMethod,
-  cashTendered,
-  setCashTendered,
   subtotal,
   isReadyForCheckout,
   toggleReadyForCheckout,
   editingOrderId,
   onCloseMobile,
 }: CartContentProps) {
-  const changeDue =
-    paymentMethod === "cash" ? Math.max(0, cashTendered - subtotal) : 0;
-
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between shrink-0">
@@ -218,34 +211,6 @@ function CartContent({
           </div>
         </div>
 
-        {paymentMethod === "cash" && (
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
-                Cash Tendered
-              </label>
-              <input
-                type="number"
-                disabled={isReadyForCheckout}
-                value={cashTendered || ""}
-                onChange={(e) =>
-                  setCashTendered(parseFloat(e.target.value) || 0)
-                }
-                placeholder="0.00"
-                className="w-full px-3 py-1.5 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-950"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
-                Change Due
-              </label>
-              <div className="px-3 py-1.5 rounded-xl bg-zinc-200/70 border border-zinc-200 text-xs font-extrabold text-emerald-950 flex items-center">
-                ₱{changeDue.toFixed(2)}
-              </div>
-            </div>
-          </div>
-        )}
-
         <div className="pt-2 border-t border-zinc-200 flex justify-between items-center text-lg font-extrabold">
           <span className="text-sm">Total Due:</span>
           <span className="text-amber-600">₱{subtotal.toFixed(2)}</span>
@@ -253,11 +218,7 @@ function CartContent({
 
         <button
           onClick={toggleReadyForCheckout}
-          disabled={
-            cart.length === 0 ||
-            !tableNumber ||
-            (paymentMethod === "cash" && cashTendered < subtotal)
-          }
+          disabled={cart.length === 0 || !tableNumber}
           className={`w-full py-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 shadow-md ${
             isReadyForCheckout
               ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
@@ -269,9 +230,7 @@ function CartContent({
           <CheckCircle2 className="w-4 h-4" />
           {isReadyForCheckout
             ? "Ready Flagged (Click to Unflag)"
-            : paymentMethod === "cash" && cashTendered < subtotal
-              ? "Insufficient Cash Tendered"
-              : "Flag Ready for Checkout"}
+            : "Flag Ready for Checkout"}
         </button>
       </div>
     </div>
@@ -303,7 +262,6 @@ function CashierSecondaryContent() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [tableNumber, setTableNumber] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [cashTendered, setCashTendered] = useState<number>(0);
   const [isReadyForCheckout, setIsReadyForCheckout] = useState(false);
   const [editingOrderId, setEditingOrderId] = useState<string | undefined>();
 
@@ -393,7 +351,6 @@ function CashierSecondaryContent() {
           }
 
           setPaymentMethod(tData.paymentMethod || "cash");
-          setCashTendered(tData.cashTendered || 0);
           setIsReadyForCheckout(!!tData.isReadyForCheckout);
         }
       } catch (err) {
@@ -414,7 +371,6 @@ function CashierSecondaryContent() {
     newCart: CartItem[],
     newTable = tableNumber,
     newPayment = paymentMethod,
-    newTendered = cashTendered,
     newReadyState = isReadyForCheckout,
   ) => {
     setCart(newCart);
@@ -429,7 +385,7 @@ function CashierSecondaryContent() {
         cart: newCart,
         tableNumber: newTable,
         paymentMethod: newPayment,
-        cashTendered: newTendered,
+        cashTendered: 0,
         isReadyForCheckout: newReadyState,
         editingOrderId,
       }),
@@ -528,21 +484,10 @@ function CashierSecondaryContent() {
       );
       return;
     }
-    const subtotalCalc = cart.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
-    if (paymentMethod === "cash" && cashTendered < subtotalCalc) {
-      alert("Cash tendered cannot be less than total amount due.");
-      return;
-    }
 
     const nextState = !isReadyForCheckout;
     setIsReadyForCheckout(nextState);
-    await updateSharedCartOnServer(
-      cart,
-      tableNumber,
-      paymentMethod,
-      cashTendered,
-      nextState,
-    );
+    await updateSharedCartOnServer(cart, tableNumber, paymentMethod, nextState);
   };
 
   if (isAuthorized === false) {
@@ -583,31 +528,10 @@ function CashierSecondaryContent() {
     removeFromCart,
     tableNumber,
     setTableNumber: (t: string) =>
-      updateSharedCartOnServer(
-        cart,
-        t,
-        paymentMethod,
-        cashTendered,
-        isReadyForCheckout,
-      ),
+      updateSharedCartOnServer(cart, t, paymentMethod, isReadyForCheckout),
     paymentMethod,
     setPaymentMethod: (p: string) =>
-      updateSharedCartOnServer(
-        cart,
-        tableNumber,
-        p,
-        cashTendered,
-        isReadyForCheckout,
-      ),
-    cashTendered,
-    setCashTendered: (c: number) =>
-      updateSharedCartOnServer(
-        cart,
-        tableNumber,
-        paymentMethod,
-        c,
-        isReadyForCheckout,
-      ),
+      updateSharedCartOnServer(cart, tableNumber, p, isReadyForCheckout),
     subtotal,
     isReadyForCheckout,
     toggleReadyForCheckout,

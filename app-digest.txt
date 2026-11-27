@@ -9,7 +9,13 @@ Directory structure:
     │   │   └── cart-sync/
     │   │       └── route.ts
     │   ├── cashier-primary/
-    │   │   └── page.tsx
+    │   │   ├── page.tsx
+    │   │   └── components/
+    │   │       ├── CompletedReceiptModal.tsx
+    │   │       ├── KitchenReceiptModal.tsx
+    │   │       ├── SessionHistoryModal.tsx
+    │   │       ├── TerminalDetailCard.tsx
+    │   │       └── TerminalSelector.tsx
     │   └── cashier-secondary/
     │       └── page.tsx
     ├── components/
@@ -343,7 +349,7 @@ body {
 
 @media print {
   @page {
-    size: 58mm auto;
+    size: 57mm auto;
     margin: 0mm;
   }
 
@@ -365,7 +371,7 @@ body {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
-    width: 58mm !important;
+    width: 57mm !important;
     margin: 0 !important;
     padding: 2mm !important;
     background: white !important;
@@ -666,6 +672,10 @@ const TERMINAL_CONFIGS: Record<
     tableNumber: "Takeout / Walk-in",
     secretToken: "waiter_sec_pass99",
   },
+  "emergency-edit": {
+    tableNumber: "Emergency Edit",
+    secretToken: "emergency_sec_pass77",
+  },
 };
 
 let terminalCarts: Record<
@@ -674,9 +684,12 @@ let terminalCarts: Record<
     cart: any[];
     tableNumber: string;
     paymentMethod: string;
+    cashTendered: number;
+    changeDue: number;
     isReadyForCheckout: boolean;
     updatedAt: number;
     secretToken: string;
+    editingOrderId?: string;
   }
 > = {};
 
@@ -686,6 +699,8 @@ for (const [tId, config] of Object.entries(TERMINAL_CONFIGS)) {
     cart: [],
     tableNumber: "",
     paymentMethod: "cash",
+    cashTendered: 0,
+    changeDue: 0,
     isReadyForCheckout: false,
     updatedAt: Date.now(),
     secretToken: config.secretToken,
@@ -749,6 +764,8 @@ export async function POST(req: Request) {
         cart: [],
         tableNumber: "",
         paymentMethod: "cash",
+        cashTendered: 0,
+        changeDue: 0,
         isReadyForCheckout: false,
         updatedAt: Date.now(),
         secretToken:
@@ -762,7 +779,10 @@ export async function POST(req: Request) {
         cart: [],
         tableNumber: "",
         paymentMethod: "cash",
+        cashTendered: 0,
+        changeDue: 0,
         isReadyForCheckout: false,
+        editingOrderId: undefined,
         updatedAt: Date.now(),
       };
     } else {
@@ -798,25 +818,17 @@ FILE: app/cashier-primary/page.tsx
 ================================================
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
-  ShoppingCart,
-  Trash2,
-  Printer,
   FileSpreadsheet,
-  Layers,
   Radio,
-  Lock,
-  Unlock,
-  X,
-  RefreshCw,
-  History,
-  Download,
-  ExternalLink,
+  Layers,
   QrCode,
-  CheckCircle2,
+  Play,
+  Pause,
+  X,
+  ExternalLink,
 } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
 import {
   saveIndependentOrder,
   getActiveSessionData,
@@ -824,8 +836,14 @@ import {
   deleteActiveSessionOrder,
   exportSessionByDate,
 } from "../cashier-actions";
-import { printThermalReceipt } from "@/utils/printReceipt";
-import { ReceiptView } from "@/components/ReceiptView";
+import {
+  KitchenReceiptModal,
+  KitchenReceiptData,
+} from "./components/KitchenReceiptModal";
+import { CompletedReceiptModal } from "./components/CompletedReceiptModal";
+import { TerminalSelector } from "./components/TerminalSelector";
+import { TerminalDetailCard } from "./components/TerminalDetailCard";
+import { SessionHistoryModal } from "./components/SessionHistoryModal";
 
 export default function CashierPrimaryPage() {
   const [terminalsState, setTerminalsState] = useState<Record<string, any>>({});
@@ -836,15 +854,175 @@ export default function CashierPrimaryPage() {
   const [isCheckingOut, setIsCheckingOut] = useState<string | null>(null);
   const [completedOrder, setCompletedOrder] = useState<any>(null);
 
+  // Kitchen Receipt Modal State
+  const [kitchenReceipt, setKitchenReceipt] =
+    useState<KitchenReceiptData | null>(null);
+
   const [showSessionModal, setShowSessionModal] = useState(false);
+  const [showQuickLinks, setShowQuickLinks] = useState(false);
   const [exportDate, setExportDate] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+
+  // Serving Sequence Queue & Auto-Navigation
+  const [servingQueue, setServingQueue] = useState<string[]>([]);
+  const [isAutoNavigating, setIsAutoNavigating] = useState(true);
 
   // QR Code Modal State
   const [qrModalData, setQrModalData] = useState<{
     title: string;
     url: string;
   } | null>(null);
+
+  const cashInputRef = useRef<HTMLInputElement>(null);
+  const lastFocusedReadyKeyRef = useRef<string>("");
+
+  // Memoize terminal keys to prevent infinite re-renders
+  const terminalKeys = useMemo(
+    () => Object.keys(terminalsState),
+    [terminalsState],
+  );
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const activeTerminalId =
+    selectedTerminalId && terminalsState[selectedTerminalId]
+      ? selectedTerminalId
+      : terminalKeys[0] || "";
+
+  const updateServerTerminalState = useCallback(
+    async (terminalId: string, newState: any) => {
+      setTerminalsState((prev) => ({ ...prev, [terminalId]: newState }));
+      await fetch("/api/cart-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          terminalId,
+          token: terminalsState[terminalId]?.secretToken,
+          ...newState,
+        }),
+      });
+    },
+    [terminalsState],
+  );
+
+  // Helper to open kitchen receipt for current terminal
+  const openKitchenReceiptForActive = useCallback(() => {
+    const tData = terminalsState[activeTerminalId];
+    if (!tData || !tData.cart || tData.cart.length === 0) return;
+    setKitchenReceipt({
+      terminalId: activeTerminalId,
+      tableNumber: tData.tableNumber || "Takeout / Walk-in",
+      queueNumber: "NEW",
+      timeOrdered: new Date(tData.updatedAt || Date.now()).toLocaleTimeString(),
+      items: tData.cart.map((i: any) => ({
+        name: i.name,
+        quantity: i.quantity,
+      })),
+    });
+  }, [activeTerminalId, terminalsState]);
+
+  // Update payment method helper for shortcut keys
+  const setPaymentMethodForActive = useCallback(
+    (method: string) => {
+      if (!activeTerminalId || !terminalsState[activeTerminalId]) return;
+      const tData = terminalsState[activeTerminalId];
+      updateServerTerminalState(activeTerminalId, {
+        ...tData,
+        paymentMethod: method,
+      });
+    },
+    [activeTerminalId, terminalsState, updateServerTerminalState],
+  );
+
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInputActive =
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+        target.isContentEditable;
+
+      const isCashInputFocused = target === cashInputRef.current;
+
+      // ALT shortcuts for terminal switching (Alt + 1..9, 0 for 10)
+      if (e.altKey) {
+        let targetTableNum: string | null = null;
+        if (e.key >= "1" && e.key <= "9") {
+          targetTableNum = e.key;
+        } else if (e.key === "0") {
+          targetTableNum = "10";
+        }
+
+        if (targetTableNum) {
+          e.preventDefault();
+          const foundKey = terminalKeys.find(
+            (k) => k === `table-${targetTableNum}`,
+          );
+          if (foundKey) {
+            setSelectedTerminalId(foundKey);
+          }
+          return;
+        }
+      }
+
+      // If user is typing inside ANY input OTHER than the cash input, block hotkeys
+      if (isInputActive && !isCashInputFocused) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+
+      // Special terminal hotkeys
+      if (key === "q") {
+        e.preventDefault();
+        const waiterKey = terminalKeys.find(
+          (k) =>
+            k.toLowerCase().startsWith("waiter") ||
+            k.toLowerCase().includes("server"),
+        );
+        if (waiterKey) setSelectedTerminalId(waiterKey);
+      } else if (key === "w") {
+        e.preventDefault();
+        const emergencyKey = terminalKeys.find((k) =>
+          k.toLowerCase().includes("emergency"),
+        );
+        if (emergencyKey) setSelectedTerminalId(emergencyKey);
+      }
+      // Payment method hotkeys
+      else if (key === "a") {
+        e.preventDefault();
+        setPaymentMethodForActive("cash");
+        setTimeout(() => {
+          cashInputRef.current?.focus();
+        }, 50);
+      } else if (key === "s") {
+        e.preventDefault();
+        setPaymentMethodForActive("gcash");
+      } else if (key === "d") {
+        e.preventDefault();
+        setPaymentMethodForActive("maya");
+      } else if (key === "z") {
+        e.preventDefault();
+        setPaymentMethodForActive("maribank");
+      } else if (key === "x") {
+        e.preventDefault();
+        setPaymentMethodForActive("card");
+      }
+      // Action hotkeys
+      else if (key === "i") {
+        e.preventDefault();
+        cashInputRef.current?.focus();
+      } else if (key === "k") {
+        e.preventDefault();
+        openKitchenReceiptForActive();
+      } else if (key === "e") {
+        e.preventDefault();
+        setShowSessionModal((prev) => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [terminalKeys, openKitchenReceiptForActive, setPaymentMethodForActive]);
 
   useEffect(() => {
     loadSessionInfo();
@@ -856,11 +1034,10 @@ export default function CashierPrimaryPage() {
         const data = JSON.parse(event.data);
         setTerminalsState(data);
         const keys = Object.keys(data);
-        if (
-          keys.length > 0 &&
-          (!selectedTerminalId || !data[selectedTerminalId])
-        ) {
-          setSelectedTerminalId(keys[0]);
+        if (keys.length > 0) {
+          setSelectedTerminalId((prev) =>
+            !prev || !data[prev] ? keys[0] : prev,
+          );
         }
       } catch (err) {
         console.error("Failed to parse SSE state:", err);
@@ -870,35 +1047,92 @@ export default function CashierPrimaryPage() {
     return () => eventSource.close();
   }, []);
 
+  // Focus input ONCE when entering a ready terminal
+  useEffect(() => {
+    const currentTermData = terminalsState[selectedTerminalId];
+    const isReady = Boolean(currentTermData?.isReadyForCheckout);
+    const focusKey = isReady ? `${selectedTerminalId}:ready` : "";
+
+    if (focusKey && lastFocusedReadyKeyRef.current !== focusKey) {
+      lastFocusedReadyKeyRef.current = focusKey;
+      setCashTendered((prev) => ({ ...prev, [selectedTerminalId]: "" }));
+      const timer = setTimeout(() => cashInputRef.current?.focus(), 80);
+      return () => clearTimeout(timer);
+    }
+
+    if (!isReady) {
+      lastFocusedReadyKeyRef.current = "";
+    }
+  }, [selectedTerminalId, terminalsState]);
+
+  // SMART AUTO-NAVIGATION EFFECT (Fixed infinite loop)
+  useEffect(() => {
+    const keys = Object.keys(terminalsState);
+
+    setServingQueue((prevQueue) => {
+      let changed = false;
+      const nextQueue = [...prevQueue];
+
+      keys.forEach((tId) => {
+        const isReady = terminalsState[tId]?.isReadyForCheckout;
+        const hasItems =
+          terminalsState[tId]?.cart && terminalsState[tId].cart.length > 0;
+        const inQueue = nextQueue.includes(tId);
+
+        if ((isReady || hasItems) && !inQueue) {
+          nextQueue.push(tId);
+          changed = true;
+        } else if (!isReady && !hasItems && inQueue) {
+          const idx = nextQueue.indexOf(tId);
+          if (idx > -1) {
+            nextQueue.splice(idx, 1);
+            changed = true;
+          }
+        }
+      });
+
+      // Only return a new array reference if the queue actually changed
+      return changed ? nextQueue : prevQueue;
+    });
+
+    if (!isAutoNavigating) return;
+    if (!selectedTerminalId || !terminalsState[selectedTerminalId]) return;
+
+    const currentTerminalData = terminalsState[selectedTerminalId];
+    if (currentTerminalData?.isReadyForCheckout === true) return;
+    if (currentTerminalData?.cart && currentTerminalData.cart.length > 0)
+      return;
+
+    const currentIndex = keys.indexOf(selectedTerminalId);
+    const orderedKeys = [
+      ...keys.slice(currentIndex + 1),
+      ...keys.slice(0, currentIndex + 1),
+    ];
+
+    const readyMatch = orderedKeys.find(
+      (tId) => terminalsState[tId]?.isReadyForCheckout === true,
+    );
+    if (readyMatch && readyMatch !== selectedTerminalId) {
+      setSelectedTerminalId(readyMatch);
+    }
+  }, [terminalsState, isAutoNavigating, selectedTerminalId]);
+
   async function loadSessionInfo() {
     const session = await getActiveSessionData();
     setActiveSession(session);
   }
 
-  const updateServerTerminalState = async (
-    terminalId: string,
-    newState: any,
-  ) => {
-    const updated = { ...terminalsState, [terminalId]: newState };
-    setTerminalsState(updated);
-    await fetch("/api/cart-sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        terminalId,
-        token: terminalsState[terminalId]?.secretToken,
-        ...newState,
-      }),
-    });
-  };
-
   const clearTerminalCart = async (terminalId: string) => {
+    setCashTendered((prev) => ({ ...prev, [terminalId]: "" }));
     await updateServerTerminalState(terminalId, {
       ...terminalsState[terminalId],
       cart: [],
       tableNumber: "",
       paymentMethod: "cash",
+      cashTendered: 0,
+      changeDue: 0,
       isReadyForCheckout: false,
+      editingOrderId: undefined,
       resetTerminal: true,
     });
   };
@@ -911,21 +1145,32 @@ export default function CashierPrimaryPage() {
     }
     if (tData.cart.length === 0) return;
 
-    const tenderedVal = parseFloat(cashTendered[terminalId] || "0") || 0;
-
     const subtotal = tData.cart.reduce(
       (sum: number, item: any) => sum + item.unitPrice * item.quantity,
       0,
     );
 
+    const rawCash =
+      cashTendered[terminalId] !== undefined
+        ? cashTendered[terminalId]
+        : String(tData.cashTendered ?? "");
+
+    const tenderedVal =
+      tData.paymentMethod === "cash" ? parseFloat(rawCash) || 0 : subtotal;
+
     if (tData.paymentMethod === "cash" && tenderedVal < subtotal) {
       alert(
-        `Cash tendered is less than total amount due for Terminal [${terminalId}]!`,
+        `Cash tendered (â‚±${tenderedVal.toFixed(2)}) is less than total amount due (â‚±${subtotal.toFixed(2)})!`,
       );
       return;
     }
 
     setIsCheckingOut(terminalId);
+
+    if (tData.editingOrderId) {
+      await deleteActiveSessionOrder(tData.editingOrderId);
+    }
+
     const res = await saveIndependentOrder({
       paymentMethod: tData.paymentMethod,
       tableNumber: tData.tableNumber || "Takeout / Walk-in",
@@ -935,26 +1180,56 @@ export default function CashierPrimaryPage() {
     setIsCheckingOut(null);
 
     if (res.success) {
-      const newCompleted = {
+      setCompletedOrder({
         orderId: res.orderId,
         queueNumber: res.queueNumber,
         tableNumber: tData.tableNumber || "Takeout / Walk-in",
         total: subtotal,
         paymentMethod: tData.paymentMethod,
-        cashTendered: tData.paymentMethod === "cash" ? tenderedVal : subtotal,
+        cashTendered: tenderedVal,
         changeDue:
           tData.paymentMethod === "cash"
             ? Math.max(0, tenderedVal - subtotal)
             : 0,
         date: new Date().toLocaleString(),
         items: tData.cart,
-      };
-      setCompletedOrder(newCompleted);
+      });
+
       await clearTerminalCart(terminalId);
       loadSessionInfo();
+      setShowSessionModal(false);
     } else {
       alert("Checkout failed.");
     }
+  };
+
+  const handleEmergencyEditOrder = async (ord: any) => {
+    const mappedCart = ord.items.map((i: any) => ({
+      productId:
+        i.productId ||
+        "xlsx_item_" + Math.random().toString(36).substring(2, 6),
+      name: i.name,
+      unitPrice: i.unitPrice,
+      originalPrice: i.unitPrice,
+      quantity: i.quantity,
+    }));
+
+    await updateServerTerminalState("emergency-edit", {
+      cart: mappedCart,
+      tableNumber: ord.tableNumber,
+      paymentMethod: ord.paymentMethod || "cash",
+      cashTendered: ord.totalAmount,
+      changeDue: 0,
+      isReadyForCheckout: false,
+      editingOrderId: ord.orderId,
+    });
+
+    setCashTendered((prev) => ({
+      ...prev,
+      "emergency-edit": String(ord.totalAmount),
+    }));
+    setSelectedTerminalId("emergency-edit");
+    setShowSessionModal(false);
   };
 
   const handleDeleteSessionOrder = async (orderId: string) => {
@@ -1000,19 +1275,6 @@ export default function CashierPrimaryPage() {
     }
   };
 
-  const handleRestartSession = async () => {
-    if (
-      confirm(
-        "Are you sure you want to clear active session orders and start fresh?",
-      )
-    ) {
-      await restartSession();
-      loadSessionInfo();
-    }
-  };
-
-  const terminalKeys = Object.keys(terminalsState);
-
   return (
     <div className="h-screen bg-[#fdfbf7] flex flex-col font-sans overflow-hidden">
       <header className="bg-white border-b border-zinc-200 px-6 py-4 flex items-center justify-between shadow-xs shrink-0 z-20">
@@ -1027,514 +1289,945 @@ export default function CashierPrimaryPage() {
           </span>
         </div>
 
-        <button
-          onClick={() => setShowSessionModal(true)}
-          className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-        >
-          <Layers className="w-4 h-4" /> Session & History
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsAutoNavigating(!isAutoNavigating)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+              isAutoNavigating
+                ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                : "bg-zinc-100 text-zinc-700 border-zinc-200 hover:bg-zinc-200"
+            }`}
+          >
+            {isAutoNavigating ? (
+              <Play className="w-3.5 h-3.5" />
+            ) : (
+              <Pause className="w-3.5 h-3.5" />
+            )}
+            Auto-Nav: {isAutoNavigating ? "ON" : "OFF"}
+          </button>
+
+          <button
+            onClick={() => setShowQuickLinks(!showQuickLinks)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+              showQuickLinks
+                ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                : "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
+            }`}
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            {showQuickLinks ? "Hide Links" : "Terminal Links"}
+          </button>
+
+          <button
+            onClick={() => setShowSessionModal(true)}
+            className="px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <Layers className="w-4 h-4" /> Session & History (E)
+          </button>
+        </div>
       </header>
 
-      <div className="flex-1 p-6 overflow-y-auto max-w-7xl mx-auto w-full">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-wider">
-            Active Terminals & Tables ({terminalKeys.length})
-          </h2>
-          <span className="text-xs font-semibold text-zinc-500">
-            Session Checkouts:{" "}
-            <strong className="text-emerald-700">
-              {activeSession?.orders?.length || 0}
-            </strong>
-          </span>
-        </div>
-
-        {/* Terminal Buttons Selector */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          {terminalKeys.map((tId) => {
-            const tData = terminalsState[tId];
-            const hasItems = tData?.cart?.length > 0;
-            const isReady = tData?.isReadyForCheckout;
-            const isSelected = selectedTerminalId === tId;
-            const isWaiter = tId.toLowerCase().startsWith("waiter");
-
-            const buttonLabel = isWaiter
-              ? "Server / Waiter 1"
-              : tId.startsWith("table-")
-                ? `Table ${tId.split("-")[1]}`
-                : tId;
-
-            return (
-              <button
-                key={tId}
-                onClick={() => setSelectedTerminalId(tId)}
-                className={`py-3 px-4 rounded-2xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${
-                  isSelected
-                    ? isReady
-                      ? "bg-emerald-600 text-white shadow-lg ring-4 ring-emerald-400 animate-pulse"
-                      : "bg-emerald-600 text-white shadow-md ring-2 ring-emerald-600"
-                    : isReady
-                      ? "bg-emerald-500 text-white shadow-lg ring-4 ring-emerald-300 animate-bounce"
-                      : hasItems
-                        ? "bg-amber-50 text-amber-900 border border-amber-300"
-                        : "bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
-                }`}
-              >
-                <span>{buttonLabel}</span>
-                {hasItems && (
-                  <span
-                    className={`w-2 h-2 rounded-full ${isReady ? "bg-white animate-ping" : "bg-amber-500"}`}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Selected Terminal Details */}
-        {selectedTerminalId &&
-          terminalsState[selectedTerminalId] &&
-          (() => {
-            const tId = selectedTerminalId;
-            const tData = terminalsState[tId];
-            const isWaiter = tId.toLowerCase().startsWith("waiter");
-
-            const origin =
-              typeof window !== "undefined" ? window.location.origin : "";
-            const secondaryTerminalUrl = `${origin}/cashier-secondary?u=${encodeURIComponent(
-              tId,
-            )}${
-              tData.secretToken
-                ? `&token=${encodeURIComponent(tData.secretToken)}`
-                : ""
-            }`;
-
-            const subtotal = tData.cart.reduce(
-              (sum: number, item: any) => sum + item.unitPrice * item.quantity,
-              0,
-            );
-            const tenderedVal = parseFloat(cashTendered[tId] || "0") || 0;
-            const changeDue =
-              tData.paymentMethod === "cash"
-                ? Math.max(0, tenderedVal - subtotal)
-                : 0;
-
-            return (
-              <div className="bg-white rounded-3xl border border-zinc-200 shadow-md p-6 space-y-6">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-100 pb-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-xs font-bold uppercase px-3 py-1 rounded-full border ${
-                          isWaiter
-                            ? "text-indigo-800 bg-indigo-50 border-indigo-200"
-                            : "text-emerald-800 bg-emerald-50 border-emerald-200"
-                        }`}
-                      >
-                        {isWaiter ? "Server Terminal" : `Terminal ID: ${tId}`}
-                      </span>
-                      <span className="text-xs font-bold uppercase text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
-                        {tData.tableNumber || "Not Selected"}
-                      </span>
-                    </div>
-                    <h3 className="text-lg font-extrabold text-zinc-950 mt-2">
-                      Cart Items ({tData.cart.length})
-                    </h3>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() =>
-                        setQrModalData({
-                          title: isWaiter
-                            ? "Server Terminal"
-                            : tData.tableNumber || tId,
-                          url: secondaryTerminalUrl,
-                        })
-                      }
-                      className="flex items-center gap-1.5 text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-200 transition-colors cursor-pointer"
-                    >
-                      <QrCode className="w-4 h-4" /> Show QR
-                    </button>
-
-                    <a
-                      href={secondaryTerminalUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-1.5 rounded-xl border border-amber-200 transition-colors"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" /> Open Terminal
-                    </a>
-
-                    {tData.isReadyForCheckout ? (
-                      <span className="flex items-center gap-1.5 text-xs font-bold bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 animate-pulse">
-                        <Unlock className="w-4 h-4" /> Ready Flagged
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1.5 text-xs font-bold bg-rose-50 text-rose-700 px-3 py-1.5 rounded-xl border border-rose-200">
-                        <Lock className="w-4 h-4" /> Locked (Unflagged)
-                      </span>
-                    )}
-                    {tData.cart.length > 0 && (
-                      <button
-                        onClick={() => clearTerminalCart(tId)}
-                        className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-colors cursor-pointer"
-                      >
-                        Clear Cart
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {tData.cart.length === 0 ? (
-                  <div className="py-16 text-center text-zinc-400">
-                    <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-zinc-300" />
-                    <p className="text-sm font-medium">
-                      Terminal [{tId}] cart is empty
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {tData.cart.map((item: any) => {
-                      const itemUnitPrice = item.unitPrice;
-                      const lineTotal = itemUnitPrice * item.quantity;
-
-                      return (
-                        <div
-                          key={item.productId}
-                          className="flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 border border-zinc-100"
-                        >
-                          <div className="flex-1">
-                            <h4 className="font-bold text-zinc-900 text-sm">
-                              {item.name}
-                            </h4>
-                            <div className="flex items-center gap-2 text-xs mt-0.5">
-                              <span className="font-bold text-emerald-600">
-                                â‚±{itemUnitPrice.toFixed(2)} each
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-6">
-                            <span className="font-bold text-sm text-zinc-700">
-                              Qty: {item.quantity}
-                            </span>
-                            <span className="font-extrabold text-sm text-zinc-950">
-                              â‚±{lineTotal.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {tData.cart.length > 0 && (
-                  <div className="pt-4 border-t border-zinc-100 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
-                          Payment Method
-                        </label>
-                        <div className="grid grid-cols-4 gap-2">
-                          {["cash", "gcash", "maya", "card"].map((m) => (
-                            <button
-                              key={m}
-                              onClick={() =>
-                                updateServerTerminalState(tId, {
-                                  ...tData,
-                                  paymentMethod: m,
-                                })
-                              }
-                              className={`py-2 rounded-xl text-xs font-bold uppercase transition-all cursor-pointer ${
-                                tData.paymentMethod === m
-                                  ? "bg-emerald-600 text-white"
-                                  : "bg-zinc-100 text-zinc-700"
-                              }`}
-                            >
-                              {m}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {tData.paymentMethod === "cash" && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
-                              Cash Tendered
-                            </label>
-                            <input
-                              type="number"
-                              placeholder="0.00"
-                              value={cashTendered[tId] || ""}
-                              onChange={(e) =>
-                                setCashTendered({
-                                  ...cashTendered,
-                                  [tId]: e.target.value,
-                                })
-                              }
-                              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold text-zinc-950 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
-                              Change Due
-                            </label>
-                            <div className="px-3 py-2 rounded-xl bg-zinc-200/70 border border-zinc-200 text-sm font-extrabold text-emerald-950 flex items-center">
-                              â‚±{changeDue.toFixed(2)}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2">
-                      <div>
-                        <span className="text-xs text-zinc-500 font-bold uppercase block">
-                          Total Amount Due
-                        </span>
-                        <span className="text-2xl font-extrabold text-emerald-600">
-                          â‚±{subtotal.toFixed(2)}
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={() => handleCheckout(tId)}
-                        disabled={
-                          !tData.isReadyForCheckout || isCheckingOut === tId
-                        }
-                        className={`px-8 py-3.5 rounded-2xl font-bold text-sm uppercase tracking-wider transition-all shadow-lg ${
-                          tData.isReadyForCheckout
-                            ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 cursor-pointer animate-pulse"
-                            : "bg-zinc-300 text-zinc-500 cursor-not-allowed"
-                        } disabled:opacity-60`}
-                      >
-                        {!tData.isReadyForCheckout
-                          ? "Awaiting Terminal Ready Flag..."
-                          : isCheckingOut === tId
-                            ? "Processing Checkout..."
-                            : `Complete Checkout (â‚±${subtotal.toFixed(2)})`}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-      </div>
-
-      {/* QR CODE POPUP MODAL */}
-      {qrModalData && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150"
-          onClick={() => setQrModalData(null)}
-        >
-          <div
-            className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm text-center border border-zinc-100 space-y-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-              <h3 className="text-base font-extrabold text-zinc-950 font-['Montserrat']">
-                Scan for {qrModalData.title}
+      <div className="flex-1 p-6 overflow-y-auto max-w-7xl mx-auto w-full space-y-6">
+        {showQuickLinks && (
+          <div className="bg-white rounded-3xl border border-zinc-200 shadow-xs p-5 space-y-3 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                Terminal Quick Links & QR Directory
               </h3>
               <button
-                onClick={() => setQrModalData(null)}
-                className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center text-zinc-600 cursor-pointer"
+                onClick={() => setShowQuickLinks(false)}
+                className="text-xs text-zinc-400 hover:text-zinc-600 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
+              {terminalKeys.map((tId) => {
+                const tData = terminalsState[tId];
+                const termUrl = `${origin}/cashier-secondary?u=${encodeURIComponent(tId)}${
+                  tData?.secretToken
+                    ? `&token=${encodeURIComponent(tData.secretToken)}`
+                    : ""
+                }`;
+                const label = tId.startsWith("table-")
+                  ? `Table ${tId.split("-")[1]}`
+                  : tId;
+                return (
+                  <div
+                    key={tId}
+                    className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200 flex flex-col justify-between gap-2 text-left"
+                  >
+                    <div className="truncate">
+                      <span className="font-extrabold text-xs text-zinc-900 block truncate">
+                        {label}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 pt-1 border-t border-zinc-200">
+                      <a
+                        href={termUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-1.5 px-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                      >
+                        <ExternalLink className="w-3 h-3" /> Open
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-            <div className="bg-zinc-50 p-6 rounded-2xl border border-zinc-200 flex justify-center">
-              <QRCodeSVG value={qrModalData.url} size={200} level="H" />
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-zinc-500 uppercase tracking-wider">
+              Active Terminals & Tables ({terminalKeys.length})
+            </h2>
+            <span className="text-xs font-semibold text-zinc-500">
+              Session Checkouts:{" "}
+              <strong className="text-emerald-700">
+                {activeSession?.orders?.length || 0}
+              </strong>
+            </span>
+          </div>
+
+          <TerminalSelector
+            terminalKeys={terminalKeys}
+            terminalsState={terminalsState}
+            activeTerminalId={activeTerminalId}
+            onSelectTerminal={(tId) => setSelectedTerminalId(tId)}
+          />
+
+          <TerminalDetailCard
+            activeTerminalId={activeTerminalId}
+            currentTerminalData={terminalsState[activeTerminalId]}
+            origin={origin}
+            cashTenderedVal={
+              cashTendered[activeTerminalId] !== undefined
+                ? cashTendered[activeTerminalId]
+                : terminalsState[activeTerminalId]?.cashTendered
+                  ? String(terminalsState[activeTerminalId].cashTendered)
+                  : ""
+            }
+            cashInputRef={cashInputRef}
+            onOpenKitchenReceipt={openKitchenReceiptForActive}
+            onOpenQrModal={(title, url) => setQrModalData({ title, url })}
+            onClearCart={clearTerminalCart}
+            onUpdateTerminalState={updateServerTerminalState}
+            onCashChange={(tId, val) =>
+              setCashTendered((prev) => ({ ...prev, [tId]: val }))
+            }
+            onCashBlur={(tId, val) =>
+              updateServerTerminalState(tId, {
+                ...terminalsState[tId],
+                cashTendered: val,
+              })
+            }
+            onCashKeyDown={(e, tId) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                const tData = terminalsState[tId];
+                if (!tData?.isReadyForCheckout) {
+                  alert(
+                    `Terminal [${tId}] has not flagged ready for checkout yet!`,
+                  );
+                  return;
+                }
+                handleCheckout(tId);
+              }
+            }}
+            onCheckout={handleCheckout}
+            isCheckingOut={isCheckingOut}
+          />
+        </div>
+      </div>
+
+      <KitchenReceiptModal
+        receipt={kitchenReceipt}
+        onClose={() => setKitchenReceipt(null)}
+      />
+
+      <CompletedReceiptModal
+        completedOrder={completedOrder}
+        onClose={() => setCompletedOrder(null)}
+      />
+
+      <SessionHistoryModal
+        isOpen={showSessionModal}
+        onClose={() => setShowSessionModal(false)}
+        activeSession={activeSession}
+        exportDate={exportDate}
+        setExportDate={setExportDate}
+        onExport={handleExport}
+        isExporting={isExporting}
+        onEmergencyEdit={handleEmergencyEditOrder}
+        onPrintHistoryOrder={handlePrintHistoryOrder}
+        onDeleteOrder={handleDeleteSessionOrder}
+        onRestartSession={async () => {
+          if (
+            confirm("Are you sure you want to clear active session orders?")
+          ) {
+            await restartSession();
+            loadSessionInfo();
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+
+
+================================================
+FILE: app/cashier-primary/components/CompletedReceiptModal.tsx
+================================================
+"use client";
+
+import React, { useEffect } from "react";
+import { CheckCircle2, Printer } from "lucide-react";
+import { printThermalReceipt } from "@/utils/printReceipt";
+import { ReceiptView, ReceiptData } from "@/components/ReceiptView";
+
+interface CompletedReceiptModalProps {
+  completedOrder: ReceiptData | null;
+  onClose: () => void;
+}
+
+export function CompletedReceiptModal({
+  completedOrder,
+  onClose,
+}: CompletedReceiptModalProps) {
+  useEffect(() => {
+    if (!completedOrder) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        printThermalReceipt("thermal-receipt");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [completedOrder, onClose]);
+
+  if (!completedOrder) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-md border border-zinc-100 space-y-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-center space-y-1">
+          <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto text-xl font-bold">
+            <CheckCircle2 className="w-6 h-6" />
+          </div>
+          <h3 className="text-xl font-extrabold text-zinc-950 font-['Montserrat']">
+            Order Receipt
+          </h3>
+          <p className="text-xs text-zinc-500">
+            Queue #<strong>{completedOrder.queueNumber}</strong> |{" "}
+            {completedOrder.tableNumber}
+          </p>
+        </div>
+
+        <div className="max-h-64 overflow-y-auto">
+          <ReceiptView order={completedOrder} id="thermal-receipt" />
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={() =>
+              setTimeout(() => printThermalReceipt("thermal-receipt"), 50)
+            }
+            className="flex-1 py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+          >
+            <Printer className="w-4 h-4" /> Print Receipt (Enter)
+          </button>
+          <button
+            onClick={onClose}
+            className="px-6 py-3 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs cursor-pointer"
+          >
+            Close (Esc)
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+================================================
+FILE: app/cashier-primary/components/KitchenReceiptModal.tsx
+================================================
+"use client";
+
+import React, { useEffect } from "react";
+import { ChefHat, Printer, X } from "lucide-react";
+import { printThermalReceipt } from "@/utils/printReceipt";
+
+export interface KitchenReceiptData {
+  terminalId: string;
+  tableNumber: string;
+  queueNumber: string | number;
+  timeOrdered: string;
+  items: Array<{ name: string; quantity: number }>;
+}
+
+interface KitchenReceiptModalProps {
+  receipt: KitchenReceiptData | null;
+  onClose: () => void;
+}
+
+export function KitchenReceiptModal({
+  receipt,
+  onClose,
+}: KitchenReceiptModalProps) {
+  useEffect(() => {
+    if (!receipt) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        printThermalReceipt("kitchen-thermal-receipt");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [receipt, onClose]);
+
+  if (!receipt) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm border border-zinc-100 space-y-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+          <div className="flex items-center gap-2">
+            <ChefHat className="w-5 h-5 text-amber-600" />
+            <h3 className="text-base font-extrabold text-zinc-950 font-['Montserrat']">
+              Kitchen Order Ticket
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center text-zinc-600 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Thermal Print View Container */}
+        <div
+          id="kitchen-thermal-receipt"
+          className="bg-white p-4 rounded-2xl border border-black space-y-3 font-mono text-xs text-black"
+        >
+          <div className="text-center font-bold pb-2 border-b-2 border-black space-y-1">
+            <div className="text-sm font-black tracking-wider uppercase">
+              KITCHEN TICKET
+            </div>
+            <div className="badge-box py-1.5 px-3 rounded-md border-2 border-black bg-white text-black my-1 inline-block">
+              <div className="text-base font-black uppercase">
+                {receipt.tableNumber}
+              </div>
+            </div>
+            <div className="text-[10px]">Time: {receipt.timeOrdered}</div>
+          </div>
+
+          <div className="space-y-2 py-1">
+            {receipt.items.map((item, idx) => (
+              <div
+                key={idx}
+                className="flex justify-between font-bold text-xs border-b border-dashed border-zinc-300 pb-1"
+              >
+                <span>{item.name}</span>
+                <span className="font-black text-sm">x{item.quantity}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={() => printThermalReceipt("kitchen-thermal-receipt")}
+            className="flex-1 py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
+          >
+            <Printer className="w-4 h-4" /> Print Ticket (Enter)
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-3 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs cursor-pointer"
+          >
+            Close (Esc)
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+================================================
+FILE: app/cashier-primary/components/SessionHistoryModal.tsx
+================================================
+"use client";
+
+import React from "react";
+import {
+  History,
+  Download,
+  AlertTriangle,
+  Printer,
+  Trash2,
+  RefreshCw,
+  X,
+} from "lucide-react";
+
+interface SessionHistoryModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  activeSession: any;
+  exportDate: string;
+  setExportDate: (d: string) => void;
+  onExport: () => void;
+  isExporting: boolean;
+  onEmergencyEdit: (ord: any) => void;
+  onPrintHistoryOrder: (ord: any) => void;
+  onDeleteOrder: (orderId: string) => void;
+  onRestartSession: () => void;
+}
+
+export function SessionHistoryModal({
+  isOpen,
+  onClose,
+  activeSession,
+  exportDate,
+  setExportDate,
+  onExport,
+  isExporting,
+  onEmergencyEdit,
+  onPrintHistoryOrder,
+  onDeleteOrder,
+  onRestartSession,
+}: SessionHistoryModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
+      <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-2xl border border-zinc-100 space-y-6 max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between border-b border-zinc-100 pb-4 shrink-0">
+          <h3 className="text-lg font-extrabold text-zinc-950 font-['Montserrat'] flex items-center gap-2">
+            <History className="w-5 h-5 text-emerald-600" /> Current Session
+            History & Export
+          </h3>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto space-y-5 pr-1">
+          <div className="bg-zinc-50 p-4 rounded-2xl border border-zinc-200/80 space-y-2">
+            <span className="text-xs font-bold uppercase text-zinc-500 block">
+              Export Session to Excel
+            </span>
+            <div className="flex items-center gap-3">
+              <input
+                type="date"
+                value={exportDate}
+                onChange={(e) => setExportDate(e.target.value)}
+                className="px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-950"
+              />
+              <button
+                onClick={onExport}
+                disabled={isExporting}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                {isExporting ? "Generating..." : "Download Excel Report"}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
+              Recorded Orders ({activeSession?.orders?.length || 0})
+            </h4>
+
+            {!activeSession?.orders || activeSession.orders.length === 0 ? (
+              <div className="text-center py-12 text-zinc-400 bg-zinc-50 rounded-2xl border border-dashed border-zinc-200">
+                <History className="w-8 h-8 mx-auto mb-2 text-zinc-300" />
+                <p className="text-xs font-medium">
+                  No orders completed yet in this session.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {activeSession.orders.map((ord: any) => (
+                  <div
+                    key={ord.orderId}
+                    className="p-4 rounded-2xl bg-white border border-zinc-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-extrabold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
+                          Q#{ord.queueNumber}
+                        </span>
+                        <span className="text-xs font-bold text-zinc-700">
+                          {ord.tableNumber}
+                        </span>
+                        <span className="text-[10px] uppercase font-semibold text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-md">
+                          {ord.paymentMethod}
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-600">
+                        {ord.items
+                          ?.map((i: any) => `${i.quantity}x ${i.name}`)
+                          .join(", ")}
+                      </p>
+                      <span className="text-[10px] text-zinc-400">
+                        {new Date(ord.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-zinc-100">
+                      <span className="font-extrabold text-sm text-emerald-600">
+                        â‚±{ord.totalAmount.toFixed(2)}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => onEmergencyEdit(ord)}
+                          title="Emergency Edit Order"
+                          className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5" /> Edit
+                        </button>
+                        <button
+                          onClick={() => onPrintHistoryOrder(ord)}
+                          title="Print Receipt"
+                          className="p-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 cursor-pointer"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => onDeleteOrder(ord.orderId)}
+                          title="Delete Order"
+                          className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 space-y-3">
+            <span className="text-xs font-bold uppercase text-rose-700 block">
+              Danger Zone
+            </span>
+            <p className="text-xs text-rose-600">
+              Restarting session clears all completed orders in the active
+              session file.
+            </p>
+            <button
+              onClick={onRestartSession}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-sm"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Restart / Reset Active
+              Session
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+================================================
+FILE: app/cashier-primary/components/TerminalDetailCard.tsx
+================================================
+"use client";
+
+import React, { RefObject } from "react";
+import {
+  ShoppingCart,
+  ChefHat,
+  QrCode,
+  ExternalLink,
+  Unlock,
+  Lock,
+} from "lucide-react";
+
+interface TerminalDetailCardProps {
+  activeTerminalId: string;
+  currentTerminalData: any;
+  origin: string;
+  cashTenderedVal: string;
+  cashInputRef: RefObject<HTMLInputElement | null>;
+  onOpenKitchenReceipt: () => void;
+  onOpenQrModal: (title: string, url: string) => void;
+  onClearCart: (tId: string) => void;
+  onUpdateTerminalState: (tId: string, newState: any) => void;
+  onCashChange: (tId: string, val: string) => void;
+  onCashBlur: (tId: string, val: number) => void;
+  onCashKeyDown: (
+    e: React.KeyboardEvent,
+    tId: string,
+    subtotal: number,
+  ) => void;
+  onCheckout: (tId: string) => void;
+  isCheckingOut: string | null;
+}
+
+export function TerminalDetailCard({
+  activeTerminalId,
+  currentTerminalData,
+  origin,
+  cashTenderedVal,
+  cashInputRef,
+  onOpenKitchenReceipt,
+  onOpenQrModal,
+  onClearCart,
+  onUpdateTerminalState,
+  onCashChange,
+  onCashBlur,
+  onCashKeyDown,
+  onCheckout,
+  isCheckingOut,
+}: TerminalDetailCardProps) {
+  if (!activeTerminalId || !currentTerminalData) {
+    return (
+      <div className="bg-white rounded-3xl border border-zinc-200 p-12 text-center text-zinc-400">
+        <p className="text-sm font-medium">
+          Select a terminal above to inspect its active cart and checkout
+          status.
+        </p>
+      </div>
+    );
+  }
+
+  const tId = activeTerminalId;
+  const tData = currentTerminalData;
+  const isWaiter = tId.toLowerCase().startsWith("waiter");
+  const isEmergency = tId.toLowerCase().includes("emergency");
+
+  const secondaryTerminalUrl = `${origin}/cashier-secondary?u=${encodeURIComponent(
+    tId,
+  )}${tData.secretToken ? `&token=${encodeURIComponent(tData.secretToken)}` : ""}`;
+
+  const cartItems = tData.cart || [];
+  const subtotal = cartItems.reduce(
+    (sum: number, item: any) => sum + item.unitPrice * item.quantity,
+    0,
+  );
+  const tenderedVal = parseFloat(cashTenderedVal) || 0;
+  const changeDue =
+    tData.paymentMethod === "cash" ? Math.max(0, tenderedVal - subtotal) : 0;
+
+  const labelTitle = isEmergency
+    ? "Emergency Terminal"
+    : isWaiter
+      ? "Server Terminal"
+      : tData.tableNumber || tId;
+
+  return (
+    <div className="bg-white rounded-3xl border border-zinc-200 shadow-md p-6 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-100 pb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-xs font-bold uppercase px-3 py-1 rounded-full border ${
+                isEmergency
+                  ? "text-rose-800 bg-rose-50 border-rose-200"
+                  : isWaiter
+                    ? "text-indigo-800 bg-indigo-50 border-indigo-200"
+                    : "text-emerald-800 bg-emerald-50 border-emerald-200"
+              }`}
+            >
+              {isEmergency
+                ? "ðŸš¨ Emergency Edit Terminal"
+                : isWaiter
+                  ? "Server Terminal"
+                  : `Terminal ID: ${tId}`}
+            </span>
+            <span className="text-xs font-bold uppercase text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+              {tData.tableNumber || "Not Selected"}
+            </span>
+            {tData.editingOrderId && (
+              <span className="text-xs font-extrabold bg-rose-100 text-rose-800 px-2.5 py-0.5 rounded-md">
+                Editing Order #{tData.editingOrderId}
+              </span>
+            )}
+          </div>
+          <h3 className="text-lg font-extrabold text-zinc-950 mt-2">
+            Cart Items ({cartItems.length})
+          </h3>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {cartItems.length > 0 && (
+            <button
+              onClick={onOpenKitchenReceipt}
+              className="flex items-center gap-1.5 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-1.5 rounded-xl border border-amber-200 transition-colors cursor-pointer"
+            >
+              <ChefHat className="w-4 h-4" /> Kitchen Receipt
+            </button>
+          )}
+
+          <button
+            onClick={() => onOpenQrModal(labelTitle, secondaryTerminalUrl)}
+            className="flex items-center gap-1.5 text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-200 transition-colors cursor-pointer"
+          >
+            <QrCode className="w-4 h-4" /> Show QR
+          </button>
+
+          <a
+            href={secondaryTerminalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 px-3 py-1.5 rounded-xl border border-amber-200 transition-colors"
+          >
+            <ExternalLink className="w-3.5 h-3.5" /> Open Terminal
+          </a>
+
+          {tData.isReadyForCheckout ? (
+            <span className="flex items-center gap-1.5 text-xs font-bold bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 animate-pulse">
+              <Unlock className="w-4 h-4" /> Ready Flagged
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-xs font-bold bg-rose-50 text-rose-700 px-3 py-1.5 rounded-xl border border-rose-200">
+              <Lock className="w-4 h-4" /> Locked (Unflagged)
+            </span>
+          )}
+          {cartItems.length > 0 && (
+            <button
+              onClick={() => onClearCart(tId)}
+              className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition-colors cursor-pointer"
+            >
+              Clear Cart
+            </button>
+          )}
+        </div>
+      </div>
+
+      {cartItems.length === 0 ? (
+        <div className="py-16 text-center text-zinc-400">
+          <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-zinc-300" />
+          <p className="text-sm font-medium">Terminal [{tId}] cart is empty</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {cartItems.map((item: any) => {
+            const itemUnitPrice = item.unitPrice;
+            const lineTotal = itemUnitPrice * item.quantity;
+            return (
+              <div
+                key={item.productId}
+                className="flex items-center justify-between p-3.5 rounded-2xl bg-zinc-50 border border-zinc-100"
+              >
+                <div className="flex-1">
+                  <h4 className="font-bold text-zinc-900 text-sm">
+                    {item.name}
+                  </h4>
+                  <div className="flex items-center gap-2 text-xs mt-0.5">
+                    <span className="font-bold text-emerald-600">
+                      â‚±{itemUnitPrice.toFixed(2)} each
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-6">
+                  <span className="font-bold text-sm text-zinc-700">
+                    Qty: {item.quantity}
+                  </span>
+                  <span className="font-extrabold text-sm text-zinc-950">
+                    â‚±{lineTotal.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {cartItems.length > 0 && (
+        <div className="pt-4 border-t border-zinc-100 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
+                Payment Method
+              </label>
+              <div className="grid grid-cols-5 gap-2">
+                {["cash", "gcash", "maya", "maribank", "card"].map((m) => (
+                  <button
+                    key={m}
+                    onClick={() =>
+                      onUpdateTerminalState(tId, {
+                        ...tData,
+                        paymentMethod: m,
+                      })
+                    }
+                    className={`py-2 rounded-xl text-xs font-bold uppercase transition-all cursor-pointer ${
+                      tData.paymentMethod === m
+                        ? "bg-emerald-600 text-white"
+                        : "bg-zinc-100 text-zinc-700"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <p className="text-[11px] text-zinc-500 break-all px-2 font-mono bg-zinc-100 py-2 rounded-xl">
-              {qrModalData.url}
-            </p>
+            {tData.paymentMethod === "cash" && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
+                    Cash Tendered
+                  </label>
+                  <input
+                    ref={cashInputRef}
+                    type="number"
+                    placeholder="0.00"
+                    value={cashTenderedVal}
+                    onChange={(e) => onCashChange(tId, e.target.value)}
+                    onBlur={(e) =>
+                      onCashBlur(tId, parseFloat(e.target.value) || 0)
+                    }
+                    onKeyDown={(e) => onCashKeyDown(e, tId, subtotal)}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold text-zinc-950 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase mb-1">
+                    Change Due
+                  </label>
+                  <div className="px-3 py-2 rounded-xl bg-zinc-200/70 border border-zinc-200 text-sm font-extrabold text-emerald-950 flex items-center">
+                    â‚±{changeDue.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            <div>
+              <span className="text-xs text-zinc-500 font-bold uppercase block">
+                Total Amount Due
+              </span>
+              <span className="text-2xl font-extrabold text-emerald-600">
+                â‚±{subtotal.toFixed(2)}
+              </span>
+            </div>
 
             <button
-              onClick={() => setQrModalData(null)}
-              className="w-full py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs cursor-pointer"
+              onClick={() => onCheckout(tId)}
+              disabled={!tData.isReadyForCheckout || isCheckingOut === tId}
+              className={`px-8 py-3.5 rounded-2xl font-bold text-sm uppercase tracking-wider transition-all shadow-lg ${
+                tData.isReadyForCheckout
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 cursor-pointer animate-pulse"
+                  : "bg-zinc-300 text-zinc-500 cursor-not-allowed"
+              } disabled:opacity-60`}
             >
-              Done
+              {!tData.isReadyForCheckout
+                ? "Awaiting Terminal Ready Flag..."
+                : isCheckingOut === tId
+                  ? "Processing Checkout..."
+                  : `Complete Checkout (â‚±${subtotal.toFixed(2)})`}
             </button>
           </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {/* SESSION & HISTORY MODAL */}
-      {showSessionModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-2xl border border-zinc-100 space-y-6 max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-zinc-100 pb-4 shrink-0">
-              <h3 className="text-lg font-extrabold text-zinc-950 font-['Montserrat'] flex items-center gap-2">
-                <History className="w-5 h-5 text-emerald-600" /> Current Session
-                History & Export
-              </h3>
-              <button
-                onClick={() => setShowSessionModal(false)}
-                className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="flex-1 overflow-y-auto space-y-5 pr-1">
-              <div className="bg-zinc-50 p-4 rounded-2xl border border-zinc-200/80 space-y-2">
-                <span className="text-xs font-bold uppercase text-zinc-500 block">
-                  Export Session to Excel
-                </span>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="date"
-                    value={exportDate}
-                    onChange={(e) => setExportDate(e.target.value)}
-                    className="px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-950"
-                  />
-                  <button
-                    onClick={handleExport}
-                    disabled={isExporting}
-                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
-                  >
-                    <Download className="w-4 h-4" />
-                    {isExporting ? "Generating..." : "Download Excel Report"}
-                  </button>
-                </div>
-              </div>
 
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
-                    Recorded Orders ({activeSession?.orders?.length || 0})
-                  </h4>
-                </div>
+================================================
+FILE: app/cashier-primary/components/TerminalSelector.tsx
+================================================
+"use client";
 
-                {!activeSession?.orders || activeSession.orders.length === 0 ? (
-                  <div className="text-center py-12 text-zinc-400 bg-zinc-50 rounded-2xl border border-dashed border-zinc-200">
-                    <History className="w-8 h-8 mx-auto mb-2 text-zinc-300" />
-                    <p className="text-xs font-medium">
-                      No orders completed yet in this session.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {activeSession.orders.map((ord: any) => (
-                      <div
-                        key={ord.orderId}
-                        className="p-4 rounded-2xl bg-white border border-zinc-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-                      >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-extrabold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
-                              Q#{ord.queueNumber}
-                            </span>
-                            <span className="text-xs font-bold text-zinc-700">
-                              {ord.tableNumber}
-                            </span>
-                            <span className="text-[10px] uppercase font-semibold text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-md">
-                              {ord.paymentMethod}
-                            </span>
-                          </div>
-                          <p className="text-xs text-zinc-600">
-                            {ord.items
-                              ?.map((i: any) => `${i.quantity}x ${i.name}`)
-                              .join(", ")}
-                          </p>
-                          <span className="text-[10px] text-zinc-400">
-                            {new Date(ord.timestamp).toLocaleTimeString()}
-                          </span>
-                        </div>
+import React from "react";
 
-                        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-zinc-100">
-                          <span className="font-extrabold text-sm text-emerald-600">
-                            â‚±{ord.totalAmount.toFixed(2)}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => handlePrintHistoryOrder(ord)}
-                              title="Print Receipt"
-                              className="p-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 cursor-pointer"
-                            >
-                              <Printer className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() =>
-                                handleDeleteSessionOrder(ord.orderId)
-                              }
-                              title="Delete Order"
-                              className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 cursor-pointer"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+interface TerminalSelectorProps {
+  terminalKeys: string[];
+  terminalsState: Record<string, any>;
+  activeTerminalId: string;
+  onSelectTerminal: (tId: string) => void;
+}
 
-              <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 space-y-3">
-                <span className="text-xs font-bold uppercase text-rose-700 block">
-                  Danger Zone
-                </span>
-                <p className="text-xs text-rose-600">
-                  Restarting session clears all completed orders in the active
-                  session file.
-                </p>
-                <button
-                  onClick={handleRestartSession}
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-sm"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Restart / Reset Active
-                  Session
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+export function TerminalSelector({
+  terminalKeys,
+  terminalsState,
+  activeTerminalId,
+  onSelectTerminal,
+}: TerminalSelectorProps) {
+  return (
+    <div className="flex flex-wrap gap-2 mb-6">
+      {terminalKeys.map((tId) => {
+        const tData = terminalsState[tId];
+        const hasItems = tData?.cart?.length > 0;
+        const isReady = tData?.isReadyForCheckout;
+        const isSelected = activeTerminalId === tId;
+        const isWaiter = tId.toLowerCase().startsWith("waiter");
+        const isEmergency = tId.toLowerCase().includes("emergency");
 
-      {/* COMPLETED ORDER RECEIPT MODAL */}
-      {completedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-md border border-zinc-100 space-y-6">
-            <div className="text-center space-y-1">
-              <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto text-xl font-bold">
-                <CheckCircle2 className="w-6 h-6" />
-              </div>
-              <h3 className="text-xl font-extrabold text-zinc-950 font-['Montserrat']">
-                Order Receipt
-              </h3>
-              <p className="text-xs text-zinc-500">
-                Queue #<strong>{completedOrder.queueNumber}</strong> |{" "}
-                {completedOrder.tableNumber}
-              </p>
-            </div>
+        const buttonLabel = isEmergency
+          ? "ðŸš¨ Emergency Edit"
+          : isWaiter
+            ? "Server / Waiter 1"
+            : tId.startsWith("table-")
+              ? `Table ${tId.split("-")[1]}`
+              : tId;
 
-            <div className="max-h-64 overflow-y-auto">
-              <ReceiptView order={completedOrder} id="thermal-receipt" />
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() =>
-                  setTimeout(() => printThermalReceipt("thermal-receipt"), 50)
-                }
-                className="flex-1 py-3 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md cursor-pointer"
-              >
-                <Printer className="w-4 h-4" /> Print Thermal Receipt
-              </button>
-              <button
-                onClick={() => setCompletedOrder(null)}
-                className="px-6 py-3 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        return (
+          <button
+            key={tId}
+            onClick={() => onSelectTerminal(tId)}
+            className={`py-3 px-4 rounded-2xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-2 ${
+              isSelected
+                ? isReady
+                  ? "bg-emerald-600 text-white shadow-lg ring-4 ring-emerald-400 animate-pulse"
+                  : "bg-emerald-600 text-white shadow-md ring-2 ring-emerald-600"
+                : isReady
+                  ? "bg-emerald-500 text-white shadow-lg ring-4 ring-emerald-300 animate-bounce"
+                  : hasItems
+                    ? "bg-amber-50 text-amber-900 border border-amber-300"
+                    : "bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+            }`}
+          >
+            <span>{buttonLabel}</span>
+            {hasItems && (
+              <span
+                className={`w-2 h-2 rounded-full ${isReady ? "bg-white animate-ping" : "bg-amber-500"}`}
+              />
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1564,7 +2257,10 @@ import {
   ChevronLeft,
   ChevronRight,
   ShieldAlert,
+  Wifi,
+  AlertTriangle,
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import {
   getIndependentMenuData,
   type GroupedProduct,
@@ -1596,6 +2292,7 @@ interface CartContentProps {
   subtotal: number;
   isReadyForCheckout: boolean;
   toggleReadyForCheckout: () => void;
+  editingOrderId?: string;
   onCloseMobile?: () => void;
 }
 
@@ -1611,14 +2308,24 @@ function CartContent({
   subtotal,
   isReadyForCheckout,
   toggleReadyForCheckout,
+  editingOrderId,
   onCloseMobile,
 }: CartContentProps) {
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between shrink-0">
-        <h2 className="font-bold text-zinc-950 font-['Montserrat'] flex items-center gap-2 text-sm sm:text-base">
-          <ShoppingCart className="w-5 h-5 text-amber-600" /> Active Order Cart
-        </h2>
+        <div>
+          <h2 className="font-bold text-zinc-950 font-['Montserrat'] flex items-center gap-2 text-sm sm:text-base">
+            <ShoppingCart className="w-5 h-5 text-amber-600" /> Active Order
+            Cart
+          </h2>
+          {editingOrderId && (
+            <span className="text-[10px] bg-rose-100 text-rose-800 font-extrabold px-2 py-0.5 rounded-md mt-1 inline-flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" /> Emergency Edit: #
+              {editingOrderId}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           {cart.length > 0 && !isReadyForCheckout && (
             <button
@@ -1762,9 +2469,7 @@ function CartContent({
           <CheckCircle2 className="w-4 h-4" />
           {isReadyForCheckout
             ? "Ready Flagged (Click to Unflag)"
-            : !tableNumber
-              ? "Select Dine-in/Takeout First"
-              : "Flag Ready for Checkout"}
+            : "Flag Ready for Checkout"}
         </button>
       </div>
     </div>
@@ -1778,10 +2483,13 @@ function CashierSecondaryContent() {
 
   const terminalId = uParam || "table-1";
   const isWaiterTerminal = terminalId.toLowerCase().startsWith("waiter");
+  const isEmergencyTerminal = terminalId.toLowerCase().includes("emergency");
 
-  const displayHeaderTitle = isWaiterTerminal
-    ? "Server / Waiter Terminal"
-    : `Terminal: ${terminalId}`;
+  const displayHeaderTitle = isEmergencyTerminal
+    ? "ðŸš¨ Emergency Order Edit Terminal"
+    : isWaiterTerminal
+      ? "Server / Waiter Terminal"
+      : `Terminal: ${terminalId}`;
 
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [authError, setAuthError] = useState("");
@@ -1794,28 +2502,24 @@ function CashierSecondaryContent() {
   const [tableNumber, setTableNumber] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [isReadyForCheckout, setIsReadyForCheckout] = useState(false);
+  const [editingOrderId, setEditingOrderId] = useState<string | undefined>();
 
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
-  // Menu Modal State
   const [isMenuModalOpen, setIsMenuModalOpen] = useState(false);
   const [currentMenuPage, setCurrentMenuPage] = useState<number>(0);
+
   const menuPages = [
-    {
-      title: "Page 1: Food & Snacks",
-      src: "/Foods.jfif",
-    },
-    {
-      title: "Page 2: Beverages",
-      src: "/Drinks.jfif",
-    },
-    {
-      title: "Page 3: Free WIFI",
-      src: "/free-wifi.png",
-    },
+    { title: "Page 1: Food & Snacks", src: "/Foods.jfif", isQr: false },
+    { title: "Page 2: Beverages", src: "/Drinks.jfif", isQr: false },
+    { title: "Page 3: Free WIFI", src: "", isQr: true },
   ];
 
-  // Variant Modal State
+  const wifiSsid = process.env.NEXT_PUBLIC_WIFI_SSID || "FREE WIFI V2";
+  const wifiPassword = process.env.NEXT_PUBLIC_WIFI_PASSWORD || "fw@21436587";
+  const wifiEncryption = process.env.NEXT_PUBLIC_WIFI_ENCRYPTION || "WPA";
+  const wifiString = `WIFI:S:${wifiSsid};T:${wifiEncryption};P:${wifiPassword};;`;
+
   const [variantModalProduct, setVariantModalProduct] =
     useState<GroupedProduct | null>(null);
   const [modalQty, setModalQty] = useState<number>(1);
@@ -1823,7 +2527,6 @@ function CashierSecondaryContent() {
   const catalogScrollRef = useRef<HTMLDivElement>(null);
   const prevCartLengthRef = useRef(cart.length);
 
-  // Local transition hook to reset category, mobile cart drawer, and table when cart transitions from > 0 to 0
   useEffect(() => {
     if (prevCartLengthRef.current > 0 && cart.length === 0) {
       setSelectedCategory("all");
@@ -1867,6 +2570,7 @@ function CashierSecondaryContent() {
         if (tData) {
           const newCart = tData.cart || [];
           setCart(newCart);
+          setEditingOrderId(tData.editingOrderId);
 
           if (newCart.length === 0) {
             setSelectedCategory("all");
@@ -1920,7 +2624,9 @@ function CashierSecondaryContent() {
         cart: newCart,
         tableNumber: newTable,
         paymentMethod: newPayment,
+        cashTendered: 0,
         isReadyForCheckout: newReadyState,
+        editingOrderId,
       }),
     });
   };
@@ -2017,6 +2723,7 @@ function CashierSecondaryContent() {
       );
       return;
     }
+
     const nextState = !isReadyForCheckout;
     setIsReadyForCheckout(nextState);
     await updateSharedCartOnServer(cart, tableNumber, paymentMethod, nextState);
@@ -2067,15 +2774,20 @@ function CashierSecondaryContent() {
     subtotal,
     isReadyForCheckout,
     toggleReadyForCheckout,
+    editingOrderId,
   };
 
   return (
     <div className="h-screen bg-[#fdfbf7] flex flex-col font-sans overflow-hidden">
-      <header className="bg-white border-b border-zinc-200 px-6 py-4 flex items-center justify-between shadow-xs shrink-0 z-20">
+      <header
+        className={`border-b px-6 py-4 flex items-center justify-between shadow-xs shrink-0 z-20 ${isEmergencyTerminal ? "bg-rose-50 border-rose-200" : "bg-white border-zinc-200"}`}
+      >
         <div className="flex items-center gap-3">
-          <h1 className="text-lg sm:text-xl font-extrabold text-zinc-950 font-['Montserrat'] flex items-center gap-2">
+          <h1
+            className={`text-lg sm:text-xl font-extrabold font-['Montserrat'] flex items-center gap-2 ${isEmergencyTerminal ? "text-rose-900" : "text-zinc-950"}`}
+          >
             <FileSpreadsheet
-              className={`w-5 h-5 ${isWaiterTerminal ? "text-indigo-600" : "text-amber-600"}`}
+              className={`w-5 h-5 ${isEmergencyTerminal ? "text-rose-600" : isWaiterTerminal ? "text-indigo-600" : "text-amber-600"}`}
             />
             {displayHeaderTitle}
           </h1>
@@ -2246,11 +2958,36 @@ function CashierSecondaryContent() {
             </div>
 
             <div className="relative flex-1 bg-zinc-950 flex items-center justify-center overflow-auto p-4 min-h-[450px]">
-              <img
-                src={menuPages[currentMenuPage].src}
-                alt="Menu Page"
-                className="max-h-[68vh] w-auto object-contain rounded-xl shadow-lg"
-              />
+              {menuPages[currentMenuPage].isQr ? (
+                <div className="bg-white p-8 rounded-2xl shadow-xl flex flex-col items-center justify-center text-center space-y-4 max-w-sm mx-auto">
+                  <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+                    <Wifi className="w-6 h-6" />
+                  </div>
+                  <h4 className="font-extrabold text-zinc-950 text-lg font-['Montserrat']">
+                    Free Guest Wi-Fi
+                  </h4>
+                  <p className="text-xs text-zinc-500">
+                    Scan the QR code below with your phone camera to connect
+                    instantly.
+                  </p>
+                  <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-2xl inline-block">
+                    <QRCodeSVG value={wifiString} size={180} level="H" />
+                  </div>
+                  <div className="text-xs font-mono text-zinc-700 bg-zinc-100 px-3 py-2 rounded-xl w-full">
+                    <span className="text-zinc-500">Network:</span>{" "}
+                    <strong>{wifiSsid}</strong>
+                    <br />
+                    <span className="text-zinc-500">Password:</span>{" "}
+                    <strong>{wifiPassword}</strong>
+                  </div>
+                </div>
+              ) : (
+                <img
+                  src={menuPages[currentMenuPage].src}
+                  alt="Menu Page"
+                  className="max-h-[68vh] w-auto object-contain rounded-xl shadow-lg"
+                />
+              )}
 
               <button
                 onClick={() =>
@@ -2448,6 +3185,7 @@ export default function CashierSecondaryPage() {
 FILE: components/ReceiptView.tsx
 ================================================
 import React from "react";
+import { QRCodeSVG } from "qrcode.react";
 
 export interface ReceiptData {
   queueNumber: number | string;
@@ -2479,6 +3217,11 @@ export function ReceiptView({
     order.tableNumber.toLowerCase().includes("takeout") ||
     order.tableNumber.toLowerCase().includes("walk-in");
 
+  const wifiSsid = process.env.NEXT_PUBLIC_WIFI_SSID || "FREE WIFI V2";
+  const wifiPassword = process.env.NEXT_PUBLIC_WIFI_PASSWORD || "fw@21436587";
+  const wifiEncryption = process.env.NEXT_PUBLIC_WIFI_ENCRYPTION || "WPA";
+  const wifiString = `WIFI:S:${wifiSsid};T:${wifiEncryption};P:${wifiPassword};;`;
+
   return (
     <div
       id={id}
@@ -2491,7 +3234,6 @@ export function ReceiptView({
         </div>
         <div className="text-[10px] text-black">Official Receipt</div>
 
-        {/* High-contrast Black & White Emphasis */}
         {isTakeout ? (
           <div className="badge-box py-1.5 px-3 rounded-md border-2 border-black bg-white text-black my-1 inline-block">
             <div className="text-[10px] font-bold uppercase tracking-wider">
@@ -2559,8 +3301,42 @@ export function ReceiptView({
         )}
       </div>
 
-      <div className="text-center text-[10px] text-black pt-2 border-t border-dashed border-black mt-2">
-        <p className="font-bold">FREE WIFI : kids@2026_123</p>
+      {/* Tightly Centered Vertical Wi-Fi Section */}
+      <div
+        className="pt-2 pb-1 border-t border-dashed border-black mt-2 text-center"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <p
+          className="font-bold text-[10px] uppercase tracking-wide"
+          style={{ margin: "0 0 4px 0" }}
+        >
+          SCAN FOR FREE WI-FI
+        </p>
+        <div
+          style={{
+            margin: "2px 0",
+            padding: "2px",
+            background: "#fff",
+            display: "inline-block",
+          }}
+        >
+          <QRCodeSVG value={wifiString} size={80} level="M" />
+        </div>
+        <div
+          className="text-[10px] font-bold"
+          style={{ margin: "4px 0 0 0", lineHeight: "1.3" }}
+        >
+          <div>SSID: {wifiSsid}</div>
+          <div>PASS: {wifiPassword}</div>
+        </div>
+      </div>
+
+      <div className="text-center text-[10px] text-black pt-2 border-t border-dashed border-black mt-1">
         <p>Thank you for dining with us!</p>
         <p className="font-bold">
           Please keep this receipt for your reference.
@@ -2888,7 +3664,7 @@ export function printThermalReceipt(
         <title>Receipt</title>
         <style>
           @page {
-            size: 58mm auto;
+            size: 57mm auto;
             margin: 0;
           }
           * {
@@ -2901,14 +3677,15 @@ export function printThermalReceipt(
             font-size: 11px;
             font-weight: bold;
             line-height: 1.25;
-            width: 48mm;
+            width: 47mm;
             margin: 0 auto;
             padding: 2mm 0;
             color: #000;
             background: #fff;
+            text-align: left;
           }
-          .text-center { text-align: center; }
-          .text-right { text-align: right; }
+          .text-center { text-align: center !important; }
+          .text-right { text-align: right !important; }
           .font-bold { font-weight: bold; }
           .font-black { font-weight: 900; }
           .uppercase { text-transform: uppercase; }
@@ -2921,7 +3698,7 @@ export function printThermalReceipt(
             display: block;
             border: 2px solid #000;
             padding: 4px 6px;
-            margin: 6px 0;
+            margin: 6px auto;
             text-align: center;
           }
           .border-b-2 {
