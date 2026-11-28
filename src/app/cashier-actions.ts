@@ -4,21 +4,11 @@ import * as XLSX from "xlsx";
 import path from "path";
 import fs from "fs";
 
-interface ExcelRow {
-  Name?: string;
-  "Item Name"?: string;
-  ProductName?: string;
-  Category?: string;
-  Variant?: string;
-  "Variant / Details"?: string;
-  Price?: number | string;
-  "Price (₱)"?: number | string;
-}
-
 export interface ProductVariant {
   id: string;
   name: string;
   price: number;
+  stock: number;
 }
 
 export interface GroupedProduct {
@@ -28,6 +18,7 @@ export interface GroupedProduct {
   categoryId: string;
   category: { id: string; name: string };
   variants: ProductVariant[];
+  stock: number;
 }
 
 const STORAGE_DIR = path.join(process.cwd(), "data_sessions");
@@ -42,38 +33,120 @@ export async function getIndependentMenuData() {
   try {
     const filePath = path.join(process.cwd(), "menu.xlsx");
     if (!fs.existsSync(filePath)) {
+      console.warn("menu.xlsx not found at root directory.");
       return { categories: [], products: [] };
     }
 
     const fileBuffer = fs.readFileSync(filePath);
     const workbook = XLSX.read(fileBuffer, { type: "buffer" });
-    const sheetName = workbook.SheetNames[0];
-    const sheetData = XLSX.utils.sheet_to_json<ExcelRow>(
+
+    const sheetName = workbook.SheetNames.includes("Menu")
+      ? "Menu"
+      : workbook.SheetNames[0];
+
+    const sheetData = XLSX.utils.sheet_to_json<Record<string, any>>(
       workbook.Sheets[sheetName],
     );
+
+    // 1. Build map of Item IDs from Menu sheet for variant mapping
+    const variantRowToItemId = new Map<string, string>();
+    sheetData.forEach((row, index) => {
+      const variantKey = `xlsx_item_${index + 1}`;
+      const itemId = String(row["Item ID"] || "").trim();
+      if (itemId) {
+        variantRowToItemId.set(variantKey, itemId);
+      }
+    });
+
+    // 2. Parse 'Filtered Menu' sheet for stock and batch levels
+    const stockMap = new Map<string, number>();
+    if (workbook.SheetNames.includes("Filtered Menu")) {
+      const filteredData = XLSX.utils.sheet_to_json<Record<string, any>>(
+        workbook.Sheets["Filtered Menu"],
+      );
+      filteredData.forEach((row) => {
+        const itemId = String(row["Item ID"] || "").trim();
+        const variantDetails = String(row["Variant / Details"] || "")
+          .trim()
+          .toLowerCase();
+        const totalStock = Number(
+          row["Total Stock"] ?? row["Initial Batch"] ?? 0,
+        );
+
+        if (itemId) {
+          const key = `${itemId}::${variantDetails}`;
+          stockMap.set(key, totalStock);
+        }
+      });
+    }
+
+    // 3. Load active session orders and aggregate sold counts by Item ID
+    const activeSession = await getActiveSessionData();
+    const soldCountsByItemId = new Map<string, number>();
+
+    if (activeSession && activeSession.orders) {
+      activeSession.orders.forEach((ord: any) => {
+        ord.items?.forEach((item: any) => {
+          const pid = item.productId;
+          const qty = item.quantity || 0;
+          const itemId = variantRowToItemId.get(pid) || pid;
+          const current = soldCountsByItemId.get(itemId) || 0;
+          soldCountsByItemId.set(itemId, current + qty);
+        });
+      });
+    }
 
     const categoriesMap = new Map<string, { id: string; name: string }>();
     const productsMap = new Map<string, GroupedProduct>();
 
     sheetData.forEach((row, index) => {
-      const categoryName = (row.Category || "General").trim();
-      const catId = categoryName.toLowerCase().replace(/\\s+/g, "_");
-      const rawName = (
-        row.Name ||
-        row["Item Name"] ||
-        row.ProductName ||
-        "Unnamed Item"
+      const categoryName = String(
+        row.Category || row.category || "General",
       ).trim();
-      const rawVariant = (row.Variant || row["Variant / Details"] || "").trim();
-      const price = Number(row.Price ?? row["Price (₱)"]) || 0;
+
+      const rawName = String(
+        row["Item Name"] || row.ItemName || row.Name || "Unnamed Item",
+      ).trim();
+
+      if (!rawName) return;
+
+      const rawVariant = String(
+        row["Variant / Details"] || row.Variant || "Standard",
+      ).trim();
+
+      const price = Number(row["Price (₱)"] ?? row.Price ?? 0);
+      const itemId = String(row["Item ID"] || "").trim();
+      const variantType = String(row["Variant Type"] || "Dependent")
+        .trim()
+        .toLowerCase();
+
+      // Determine initial stock from Filtered Menu map
+      let initialStock = 0;
+      if (itemId) {
+        if (variantType === "dependent") {
+          const sharedKey = `${itemId}::all variants`;
+          initialStock = stockMap.get(sharedKey) ?? stockMap.get(itemId) ?? 0;
+        } else {
+          const specificKey = `${itemId}::${rawVariant.toLowerCase()}`;
+          initialStock = stockMap.get(specificKey) ?? stockMap.get(itemId) ?? 0;
+        }
+      }
+
+      const catId = categoryName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
 
       if (!categoriesMap.has(catId)) {
         categoriesMap.set(catId, { id: catId, name: categoryName });
       }
 
-      // Group by Category + Item Name so items with multiple variants share one catalog card
       const groupKey = `${catId}::${rawName.toLowerCase()}`;
       const variantId = `xlsx_item_${index + 1}`;
+
+      // Deduct total sold for this Item ID
+      const totalSoldForItem = soldCountsByItemId.get(itemId) || 0;
+      const remainingStock = Math.max(0, initialStock - totalSoldForItem);
 
       if (!productsMap.has(groupKey)) {
         productsMap.set(groupKey, {
@@ -83,20 +156,31 @@ export async function getIndependentMenuData() {
           categoryId: catId,
           category: { id: catId, name: categoryName },
           variants: [],
+          stock: 0,
         });
       }
 
       const existingGroup = productsMap.get(groupKey)!;
-      // Keep the lowest price as the base display price on the card
+
       if (price < existingGroup.sellingPrice) {
         existingGroup.sellingPrice = price;
       }
 
       existingGroup.variants.push({
         id: variantId,
-        name: rawVariant || "Standard",
+        name: rawVariant,
         price,
+        stock: remainingStock,
       });
+
+      if (variantType === "dependent") {
+        existingGroup.stock = remainingStock;
+      } else {
+        existingGroup.stock = existingGroup.variants.reduce(
+          (sum, v) => sum + v.stock,
+          0,
+        );
+      }
     });
 
     return {
@@ -109,7 +193,6 @@ export async function getIndependentMenuData() {
   }
 }
 
-// Save order to current active session
 export async function saveIndependentOrder(orderData: {
   paymentMethod: string;
   tableNumber?: string;
@@ -171,7 +254,6 @@ export async function getActiveSessionData() {
   }
 }
 
-// Clear active session entirely
 export async function restartSession() {
   try {
     ensureStorageDir();
@@ -186,7 +268,6 @@ export async function restartSession() {
   }
 }
 
-// Delete a specific order from the active session by orderId
 export async function deleteActiveSessionOrder(orderId: string) {
   try {
     ensureStorageDir();
@@ -210,7 +291,6 @@ export async function deleteActiveSessionOrder(orderId: string) {
   }
 }
 
-// Export current active session or specified date orders
 export async function exportSessionByDate(dateStr: string) {
   try {
     ensureStorageDir();
