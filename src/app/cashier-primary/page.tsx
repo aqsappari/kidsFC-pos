@@ -26,6 +26,8 @@ import { CompletedReceiptModal } from "./components/CompletedReceiptModal";
 import { TerminalSelector } from "./components/TerminalSelector";
 import { TerminalDetailCard } from "./components/TerminalDetailCard";
 import { SessionHistoryModal } from "./components/SessionHistoryModal";
+import { TableQrPrintModal } from "./components/TableQrPrintModal";
+import { QRCodeSVG } from "qrcode.react";
 
 export default function CashierPrimaryPage() {
   const [terminalsState, setTerminalsState] = useState<Record<string, any>>({});
@@ -42,6 +44,7 @@ export default function CashierPrimaryPage() {
 
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [showQuickLinks, setShowQuickLinks] = useState(false);
+  const [showTableQrModal, setShowTableQrModal] = useState(false);
   const [exportDate, setExportDate] = useState("");
   const [isExporting, setIsExporting] = useState(false);
 
@@ -117,7 +120,11 @@ export default function CashierPrimaryPage() {
 
   // Keep latest values in a ref so the global keyboard listener never needs to re-bind
   const isAnyModalOpen = Boolean(
-    kitchenReceipt || completedOrder || showSessionModal || qrModalData,
+    kitchenReceipt ||
+    completedOrder ||
+    showSessionModal ||
+    qrModalData ||
+    showTableQrModal,
   );
 
   const hotkeysStateRef = useRef({
@@ -542,9 +549,18 @@ export default function CashierPrimaryPage() {
         {showQuickLinks && (
           <div className="bg-white rounded-3xl border border-zinc-200 shadow-xs p-5 space-y-3 animate-in fade-in duration-150">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-                Terminal Quick Links & QR Directory
-              </h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                  Terminal Quick Links & QR Directory
+                </h3>
+                <button
+                  onClick={() => setShowTableQrModal(true)}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <QrCode className="w-3.5 h-3.5" /> Print All Table QR Sheet
+                  (A4)
+                </button>
+              </div>
               <button
                 onClick={() => setShowQuickLinks(false)}
                 className="text-xs text-zinc-400 hover:text-zinc-600 cursor-pointer"
@@ -562,7 +578,10 @@ export default function CashierPrimaryPage() {
                 }`;
                 const label = tId.startsWith("table-")
                   ? `Table ${tId.split("-")[1]}`
-                  : tId;
+                  : tId.startsWith("waiter-")
+                    ? "Server Terminal"
+                    : tId;
+
                 return (
                   <div
                     key={tId}
@@ -582,6 +601,15 @@ export default function CashierPrimaryPage() {
                       >
                         <ExternalLink className="w-3 h-3" /> Open
                       </a>
+                      <button
+                        onClick={() =>
+                          setQrModalData({ title: label, url: termUrl })
+                        }
+                        className="py-1.5 px-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                        title="Show QR Code"
+                      >
+                        <QrCode className="w-3 h-3" /> QR
+                      </button>
                     </div>
                   </div>
                 );
@@ -653,6 +681,52 @@ export default function CashierPrimaryPage() {
           />
         </div>
       </div>
+
+      {/* QR Code Modal */}
+      {qrModalData && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setQrModalData(null)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center border border-zinc-100 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+              <h3 className="text-base font-extrabold text-zinc-950 font-['Montserrat']">
+                {qrModalData.title} QR
+              </h3>
+              <button
+                onClick={() => setQrModalData(null)}
+                className="w-8 h-8 rounded-full bg-zinc-100 hover:bg-zinc-200 flex items-center justify-center text-zinc-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-2xl inline-block my-2">
+              <QRCodeSVG value={qrModalData.url} size={200} level="H" />
+            </div>
+            <p className="text-[11px] text-zinc-500 break-all font-mono bg-zinc-100 p-2.5 rounded-xl">
+              {qrModalData.url}
+            </p>
+            <button
+              onClick={() => setQrModalData(null)}
+              className="w-full py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* A4 Table QR Print Sheet Modal */}
+      <TableQrPrintModal
+        isOpen={showTableQrModal}
+        onClose={() => setShowTableQrModal(false)}
+        terminalKeys={terminalKeys}
+        terminalsState={terminalsState}
+        origin={origin}
+      />
 
       <KitchenReceiptModal
         receipt={kitchenReceipt}

@@ -23,7 +23,7 @@ export function printThermalReceipt(
         <title>Receipt</title>
         <style>
           @page {
-            size: 57mm auto;
+            size: 59mm auto;
             margin: 0;
           }
           * {
